@@ -8,7 +8,8 @@
     "scheme": "lumimate",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.zhenzhong.lumimate"
     },
     "android": {
       "adaptiveIcon": {
@@ -37,6 +38,13 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "c7c82494-9779-4cec-97e3-a65dd1d485c4"
+      }
+    },
+    "owner": "zhen-zhong"
   }
 }
