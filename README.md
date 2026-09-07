@@ -1,56 +1,129 @@
-# Welcome to your Expo app 👋
+# LumiMate
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+LumiMate 是一个基于 Expo / React Native 的 AI 陪伴应用。当前定位：虚拟朋友、虚拟恋人、长期记忆、本地数据存储，以及后续本地模型 / agent 能力接入。
 
-## Get started
+## 技术栈
 
-1. Install dependencies
+- Expo SDK 57
+- React Native 0.86
+- React 19
+- TypeScript
+- expo-router
+- EAS Build / Submit
 
-   ```bash
-   npm install
-   ```
+## 当前功能
 
-2. Start the app
+- `expo-router` 文件路由
+- 4 个底部导航：
+  - 首页
+  - 陪伴
+  - 记忆
+  - 设置
+- iOS Bundle ID：`com.zhenzhong.lumimate`
+- Expo / EAS 项目配置已写入 `app.json`
 
-   ```bash
-   npx expo start
-   ```
+## 本地启动
 
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
+安装依赖：
 
 ```bash
-npm run reset-project
+npm install
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+启动 Expo：
 
-### Other setup steps
+```bash
+npx expo start
+```
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+在 iPhone 上打开 Expo Go，点击本地 development server，或扫描终端二维码。
 
-## Learn more
+如果局域网连接失败，可用 tunnel：
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+npx expo start --tunnel
+```
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+## 常用命令
 
-## Join the community
+```bash
+npm run start
+npm run ios
+npm run android
+npm run web
+npm run lint
+npx tsc --noEmit
+```
 
-Join our community of developers creating universal apps.
+## 项目结构
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+```text
+src/
+  app/
+    _layout.tsx
+    index.tsx
+    companion.tsx
+    memory.tsx
+    settings.tsx
+  components/
+    app-tabs.tsx
+    app-tabs.web.tsx
+    app-screen.tsx
+  constants/
+  hooks/
+assets/
+```
+
+## 分支规范
+
+本项目使用 `master/dev` 模式：
+
+- `master`：稳定分支，只放可发布、可构建版本
+- `dev`：日常开发分支，新功能先合入这里
+- feature 分支：从 `dev` 切出，完成后合回 `dev`
+- 发布流程：`dev` 验证通过后合并到 `master`
+
+推荐流程：
+
+```bash
+git checkout dev
+git pull
+git checkout -b feature/your-feature
+
+# 开发完成后
+git checkout dev
+git merge feature/your-feature
+git push origin dev
+```
+
+发布到稳定分支：
+
+```bash
+git checkout master
+git merge dev
+git push origin master
+```
+
+## iOS 凭证
+
+iOS 凭证只保存在本地，不提交到 Git：
+
+- `.p8`
+- `.p12`
+- `.key`
+- `.mobileprovision`
+- `.pem`
+- `.certSigningRequest`
+
+`.gitignore` 已屏蔽这些敏感文件。不要把 Apple Developer / App Store Connect / Expo credentials 上传到仓库。
+
+## 后续方向
+
+- 聊天 UI
+- 用户画像与长期记忆
+- SQLite / 本地加密存储
+- HealthKit 权限与健康摘要
+- 相册 / iCloud Photos 相关能力调研
+- 推送通知
+- development build
+- 本地模型或 agent runtime 接入
