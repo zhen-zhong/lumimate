@@ -26,6 +26,8 @@ export function ChatMessageBubble({
 }: MessageProps) {
   const theme = useTheme();
   const isUser = role === 'user';
+  const audioOnly = Boolean(audioUri && !imageUri && !children);
+  const bubbleColor = isUser ? theme.backgroundSelected : theme.backgroundElement;
 
   return (
     <View style={[styles.row, isUser ? styles.userRow : styles.assistantRow]}>
@@ -34,6 +36,7 @@ export function ChatMessageBubble({
         style={[
           styles.bubble,
           imageUri ? styles.imageBubble : null,
+          audioOnly ? styles.voiceBubble : null,
           isUser ? styles.userBubble : styles.assistantBubble,
           { borderColor: theme.backgroundSelected },
         ]}>
@@ -61,6 +64,16 @@ export function ChatMessageBubble({
             </ThemedText>
           </ThemedText>
         ) : null}
+        {audioOnly ? (
+          <View
+            pointerEvents="none"
+            style={[
+              styles.voiceTail,
+              isUser ? styles.userVoiceTail : styles.assistantVoiceTail,
+              { backgroundColor: bubbleColor },
+            ]}
+          />
+        ) : null}
       </ThemedView>
     </View>
   );
@@ -79,6 +92,7 @@ function VoiceMessage({
   const player = useAudioPlayer(uri);
   const status = useAudioPlayerStatus(player);
   const playing = status.playing;
+  const label = duration ? `${duration}"` : '1"';
 
   return (
     <Pressable
@@ -91,25 +105,38 @@ function VoiceMessage({
           player.seekTo(0).finally(() => player.play());
         }
       }}
-      style={styles.voiceRow}>
-      <SymbolView
-        name={{ ios: playing ? 'pause.fill' : 'play.fill', android: playing ? 'pause' : 'play_arrow', web: playing ? 'pause' : 'play_arrow' }}
-        size={18}
-        tintColor={theme.text}
-      />
-      <View
-        style={[
-          styles.voiceWave,
-          { backgroundColor: isUser ? theme.background : theme.backgroundSelected },
-        ]}>
-        <View style={[styles.voiceBar, { backgroundColor: theme.textSecondary }]} />
-        <View style={[styles.voiceBarTall, { backgroundColor: theme.textSecondary }]} />
-        <View style={[styles.voiceBar, { backgroundColor: theme.textSecondary }]} />
-        <View style={[styles.voiceBarTall, { backgroundColor: theme.textSecondary }]} />
-      </View>
-      <ThemedText type="small" themeColor="textSecondary">
-        {duration ? `${duration}s` : '语音'}
-      </ThemedText>
+      style={[styles.voiceRow, isUser ? styles.userVoiceRow : styles.assistantVoiceRow]}>
+      {isUser ? (
+        <>
+          <ThemedText type="subtitle" style={styles.voiceDuration}>
+            {label}
+          </ThemedText>
+          <SymbolView
+            name={{
+              ios: playing ? 'pause' : 'waveform',
+              android: playing ? 'pause' : 'graphic_eq',
+              web: playing ? 'pause' : 'graphic_eq',
+            }}
+            size={playing ? 18 : 20}
+            tintColor={theme.text}
+          />
+        </>
+      ) : (
+        <>
+          <SymbolView
+            name={{
+              ios: playing ? 'pause' : 'waveform',
+              android: playing ? 'pause' : 'graphic_eq',
+              web: playing ? 'pause' : 'graphic_eq',
+            }}
+            size={playing ? 18 : 20}
+            tintColor={theme.text}
+          />
+          <ThemedText type="subtitle" style={styles.voiceDuration}>
+            {label}
+          </ThemedText>
+        </>
+      )}
     </Pressable>
   );
 }
@@ -147,6 +174,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.one,
     paddingVertical: Spacing.one,
   },
+  voiceBubble: {
+    width: 112,
+    minHeight: 44,
+    overflow: 'visible',
+    borderWidth: 0,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: 6,
+  },
   messageImage: {
     width: 188,
     height: 188,
@@ -158,33 +193,34 @@ const styles = StyleSheet.create({
     paddingTop: Spacing.one,
   },
   voiceRow: {
-    minWidth: 136,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    paddingVertical: Spacing.one,
+    gap: Spacing.one,
+    minHeight: 30,
   },
-  voiceWave: {
-    height: 28,
-    minWidth: 54,
-    borderRadius: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 3,
-    paddingHorizontal: Spacing.two,
+  userVoiceRow: {
+    justifyContent: 'flex-end',
   },
-  voiceBar: {
-    width: 3,
-    height: 10,
-    borderRadius: 2,
-    opacity: 0.7,
+  assistantVoiceRow: {
+    justifyContent: 'flex-start',
   },
-  voiceBarTall: {
-    width: 3,
-    height: 18,
-    borderRadius: 2,
-    opacity: 0.7,
+  voiceDuration: {
+    fontSize: 18,
+    lineHeight: 24,
+    fontWeight: 700,
+  },
+  voiceTail: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    top: 8,
+    transform: [{ rotate: '45deg' }],
+  },
+  userVoiceTail: {
+    right: -4,
+  },
+  assistantVoiceTail: {
+    left: -4,
   },
   messageText: {
     fontSize: 16,

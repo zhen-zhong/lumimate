@@ -1,10 +1,18 @@
 import { SymbolView, type AndroidSymbol, type SFSymbol } from 'expo-symbols';
-import { useEffect, useRef } from 'react';
-import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { type LayoutChangeEvent, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+
+const MIN_TEXT_INPUT_HEIGHT = 40;
+const TEXT_INPUT_LINE_HEIGHT = 22;
+const TEXT_INPUT_VERTICAL_PADDING = (MIN_TEXT_INPUT_HEIGHT - TEXT_INPUT_LINE_HEIGHT) / 2;
+const MAX_TEXT_INPUT_LINES = 10;
+const MAX_TEXT_INPUT_HEIGHT =
+  TEXT_INPUT_LINE_HEIGHT * MAX_TEXT_INPUT_LINES + TEXT_INPUT_VERTICAL_PADDING * 2;
+const TEXT_INPUT_RIGHT_INSET = 38;
 
 export type PromptInputMode = 'keyboard' | 'voice' | 'emoji' | 'actions';
 
@@ -44,8 +52,36 @@ export function PromptInput({
   const theme = useTheme();
   const inputRef = useRef<TextInput>(null);
   const previousModeRef = useRef(mode);
+  const [textInputHeight, setTextInputHeight] = useState(MIN_TEXT_INPUT_HEIGHT);
+  const [textInputScrollable, setTextInputScrollable] = useState(false);
+  const [textMeasureWidth, setTextMeasureWidth] = useState(0);
   const canSubmit = value.trim().length > 0 && !disabled && !submitting;
   const voiceMode = mode === 'voice';
+  const visibleTextInputHeight = value ? textInputHeight : MIN_TEXT_INPUT_HEIGHT;
+  const visibleTextInputScrollable = value ? textInputScrollable : false;
+  const measureText = value.length > 0 ? value : ' ';
+
+  const updateInputHeight = (contentHeight: number) => {
+    if (contentHeight <= 0) return;
+
+    const paddedContentHeight = Math.ceil(contentHeight) + TEXT_INPUT_VERTICAL_PADDING * 2;
+    const nextHeight = Math.min(
+      MAX_TEXT_INPUT_HEIGHT,
+      Math.max(MIN_TEXT_INPUT_HEIGHT, paddedContentHeight),
+    );
+
+    setTextInputHeight((current) => (current === nextHeight ? current : nextHeight));
+    setTextInputScrollable(paddedContentHeight > MAX_TEXT_INPUT_HEIGHT);
+  };
+
+  const onShellLayout = (event: LayoutChangeEvent) => {
+    const nextWidth = Math.max(
+      0,
+      Math.floor(event.nativeEvent.layout.width - Spacing.two - TEXT_INPUT_RIGHT_INSET),
+    );
+
+    setTextMeasureWidth((current) => (Math.abs(current - nextWidth) < 1 ? current : nextWidth));
+  };
 
   useEffect(() => {
     if (
@@ -93,7 +129,20 @@ export function PromptInput({
             </ThemedText>
           </Pressable>
         ) : (
-          <View style={[styles.textInputShell, { backgroundColor: theme.background }]}>
+          <View
+            onLayout={onShellLayout}
+            style={[
+              styles.textInputShell,
+              { backgroundColor: theme.background, height: visibleTextInputHeight },
+            ]}>
+            {textMeasureWidth > 0 ? (
+              <Text
+                aria-hidden
+                onLayout={(event) => updateInputHeight(event.nativeEvent.layout.height)}
+                style={[styles.measureText, { color: theme.text, width: textMeasureWidth }]}>
+                {measureText}
+              </Text>
+            ) : null}
             <TextInput
               ref={inputRef}
               value={value}
@@ -104,11 +153,12 @@ export function PromptInput({
               multiline
               maxLength={1000}
               editable={!disabled}
-              style={[styles.input, { color: theme.text }]}
+              style={[styles.input, { color: theme.text, height: visibleTextInputHeight }]}
               returnKeyType="send"
               enterKeyHint="send"
               enablesReturnKeyAutomatically
               blurOnSubmit={false}
+              scrollEnabled={visibleTextInputScrollable}
               submitBehavior="submit"
               onSubmitEditing={canSubmit ? onSubmit : undefined}
             />
@@ -116,6 +166,7 @@ export function PromptInput({
               name={{ ios: 'mic', android: 'mic', web: 'mic' }}
               size={22}
               tintColor={theme.textSecondary}
+              style={styles.inputMic}
             />
           </View>
         )}
@@ -206,32 +257,48 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
-    minHeight: 56,
+    minHeight: 52,
     paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingVertical: 7,
   },
   inputWrap: {
     flex: 1,
-    minHeight: 40,
-    maxHeight: 120,
+    minHeight: MIN_TEXT_INPUT_HEIGHT,
+    maxHeight: MAX_TEXT_INPUT_HEIGHT,
     justifyContent: 'center',
   },
   textInputShell: {
-    minHeight: 40,
-    maxHeight: 112,
+    minHeight: MIN_TEXT_INPUT_HEIGHT,
+    maxHeight: MAX_TEXT_INPUT_HEIGHT,
     borderRadius: 4,
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingRight: Spacing.two,
+    justifyContent: 'center',
   },
   input: {
-    flex: 1,
+    width: '100%',
     fontSize: 16,
-    lineHeight: 22,
+    lineHeight: TEXT_INPUT_LINE_HEIGHT,
     fontWeight: 500,
     paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.one,
-    maxHeight: 112,
+    paddingRight: TEXT_INPUT_RIGHT_INSET,
+    paddingVertical: TEXT_INPUT_VERTICAL_PADDING,
+    maxHeight: MAX_TEXT_INPUT_HEIGHT,
+    minHeight: MIN_TEXT_INPUT_HEIGHT,
+    includeFontPadding: false,
+    textAlignVertical: 'center',
+  },
+  measureText: {
+    position: 'absolute',
+    left: Spacing.two,
+    top: 0,
+    opacity: 0,
+    fontSize: 16,
+    lineHeight: TEXT_INPUT_LINE_HEIGHT,
+    fontWeight: 500,
+    includeFontPadding: false,
+  },
+  inputMic: {
+    position: 'absolute',
+    right: Spacing.two,
   },
   voiceInput: {
     minHeight: 40,
