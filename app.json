@@ -27,6 +27,20 @@
     "plugins": [
       "expo-router",
       [
+        "expo-audio",
+        {
+          "microphonePermission": "允许 LumiMate 使用麦克风，用于发送语音消息。"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "允许 LumiMate 访问照片，用于发送图片。",
+          "cameraPermission": "允许 LumiMate 使用相机，用于拍摄并发送照片。",
+          "microphonePermission": false
+        }
+      ],
+      [
         "expo-splash-screen",
         {
           "backgroundColor": "#208AEF",
