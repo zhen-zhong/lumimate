@@ -30,6 +30,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 const STREAMING_THROTTLE_MS = 32;
 const CHAT_PANEL_HEIGHT = 236;
+const KEYBOARD_UNDERLAY = Platform.OS === 'ios' ? 10 : 0;
 
 const MOCK_RESPONSES = [
   '我在。先不急着解决所有事。你可以把今天最占心的一件事丢给我，我们慢慢拆。',
@@ -329,12 +330,17 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
   );
 
   const panelOpen = mode === 'emoji' || mode === 'actions';
-  const customInputOpen = panelOpen || mode === 'voice';
-  const footerBottom = mode === 'keyboard' ? keyboardHeight : 0;
+  const keyboardUnderlay = keyboardHeight > 0 && mode === 'keyboard' ? KEYBOARD_UNDERLAY : 0;
+  const footerBottom =
+    mode === 'keyboard' ? Math.max(0, keyboardHeight - keyboardUnderlay) : 0;
   const footerBottomPadding =
-    keyboardHeight > 0 || panelOpen ? 0 : insets.bottom + Spacing.two;
+    keyboardHeight > 0 && mode === 'keyboard'
+      ? keyboardUnderlay
+      : panelOpen
+        ? 0
+        : insets.bottom + Spacing.two;
   const listBottomPadding =
-    76 + footerBottomPadding + footerBottom + (customInputOpen ? CHAT_PANEL_HEIGHT : 0);
+    76 + footerBottomPadding + footerBottom + (panelOpen ? CHAT_PANEL_HEIGHT : 0);
   const panelStyle = { height: CHAT_PANEL_HEIGHT + insets.bottom, paddingBottom: insets.bottom + Spacing.three };
 
   return (
@@ -352,19 +358,22 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
             onContentSizeChange={() => scrollToBottom(false)}
             showsVerticalScrollIndicator={false}
           />
+        </View>
 
-          <View
-            style={[
-              styles.footer,
-              {
-                bottom: footerBottom,
-                paddingBottom: footerBottomPadding,
-              },
-            ]}>
+        <ThemedView
+          type="backgroundElement"
+          style={[
+            styles.footer,
+            {
+              bottom: footerBottom,
+              paddingBottom: footerBottomPadding,
+            },
+          ]}>
+          <View style={styles.footerContent}>
             <PromptInput
               value={input}
               mode={mode}
-              disabled={isGenerating}
+              submitting={isGenerating}
               recording={recorderState.isRecording}
               recordingDuration={Math.max(0, Math.round((recorderState.durationMillis ?? 0) / 1000))}
               onChangeText={setInput}
@@ -376,52 +385,76 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
               onVoicePressIn={startRecording}
               onVoicePressOut={stopRecording}
             />
-            {mode === 'emoji' ? (
-              <ThemedView type="backgroundElement" style={[styles.emojiPanel, panelStyle]}>
-                {['😀', '🥹', '❤️', '👍', '✨', '😭', '😂', '🤝'].map((emoji) => (
-                  <Pressable
-                    key={emoji}
-                    accessibilityRole="button"
-                    accessibilityLabel={`输入表情 ${emoji}`}
-                    onPress={() => setInput((current) => `${current}${emoji}`)}
-                    style={({ pressed }) => [styles.emojiButton, pressed ? styles.pressed : null]}>
-                    <ThemedText style={styles.emojiText}>{emoji}</ThemedText>
-                  </Pressable>
-                ))}
-              </ThemedView>
-            ) : null}
-            {mode === 'actions' ? (
-              <ThemedView type="backgroundElement" style={[styles.actionPanel, panelStyle]}>
-                <ActionTile
-                  label="图片"
-                  icon={{ ios: 'photo', android: 'image', web: 'image' }}
-                  disabled={isGenerating}
-                  onPress={pickImage}
-                />
-                <ActionTile
-                  label="拍摄"
-                  icon={{ ios: 'camera', android: 'photo_camera', web: 'photo_camera' }}
-                  disabled={isGenerating}
-                  onPress={takePhoto}
-                />
-              </ThemedView>
-            ) : null}
-            {mode === 'voice' ? (
-              <ThemedView
-                type="backgroundElement"
-                style={[styles.voicePanel, { paddingBottom: insets.bottom + Spacing.three }]}>
-                <SymbolView
-                  name={{ ios: 'mic.fill', android: 'mic', web: 'mic' }}
-                  size={28}
-                  tintColor={theme.textSecondary}
-                />
-                <ThemedText type="small" themeColor="textSecondary">
-                  {recorderState.isRecording ? '正在录音，松开发送' : '按住输入框录音'}
-                </ThemedText>
-              </ThemedView>
-            ) : null}
           </View>
-        </View>
+
+          {mode === 'emoji' ? (
+            <View style={[styles.panelContent, styles.emojiPanel, panelStyle]}>
+              {['😀', '🥹', '❤️', '👍', '✨', '😭', '😂', '🤝'].map((emoji) => (
+                <Pressable
+                  key={emoji}
+                  accessibilityRole="button"
+                  accessibilityLabel={`输入表情 ${emoji}`}
+                  onPress={() => setInput((current) => `${current}${emoji}`)}
+                  style={({ pressed }) => [styles.emojiButton, pressed ? styles.pressed : null]}>
+                  <ThemedText style={styles.emojiText}>{emoji}</ThemedText>
+                </Pressable>
+              ))}
+            </View>
+          ) : null}
+
+          {mode === 'actions' ? (
+            <View style={[styles.panelContent, styles.actionPanel, panelStyle]}>
+              <ActionTile
+                label="照片"
+                icon={{ ios: 'photo', android: 'image', web: 'image' }}
+                disabled={isGenerating}
+                onPress={pickImage}
+              />
+              <ActionTile
+                label="拍摄"
+                icon={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+                disabled={isGenerating}
+                onPress={takePhoto}
+              />
+              <ActionTile
+                label="位置"
+                icon={{ ios: 'location.fill', android: 'location_on', web: 'location_on' }}
+                disabled={isGenerating}
+                onPress={() => {}}
+              />
+              <ActionTile
+                label="语音输入"
+                icon={{ ios: 'mic.fill', android: 'mic', web: 'mic' }}
+                disabled={isGenerating}
+                onPress={() => togglePanel('voice')}
+              />
+              <ActionTile
+                label="收藏"
+                icon={{ ios: 'cube.fill', android: 'inventory_2', web: 'inventory_2' }}
+                disabled={isGenerating}
+                onPress={() => {}}
+              />
+              <ActionTile
+                label="个人名片"
+                icon={{ ios: 'person.fill', android: 'person', web: 'person' }}
+                disabled={isGenerating}
+                onPress={() => {}}
+              />
+              <ActionTile
+                label="文件"
+                icon={{ ios: 'folder.fill', android: 'folder', web: 'folder' }}
+                disabled={isGenerating}
+                onPress={() => {}}
+              />
+              <ActionTile
+                label="音乐"
+                icon={{ ios: 'music.note', android: 'music_note', web: 'music_note' }}
+                disabled={isGenerating}
+                onPress={() => {}}
+              />
+            </View>
+          ) : null}
+        </ThemedView>
       </SafeAreaView>
     </View>
   );
@@ -467,13 +500,13 @@ const styles = StyleSheet.create({
   },
   safeArea: {
     flex: 1,
-    alignItems: 'center',
-    paddingHorizontal: Spacing.three,
   },
   centered: {
     width: '100%',
     maxWidth: MaxContentWidth,
     flex: 1,
+    alignSelf: 'center',
+    paddingHorizontal: Spacing.three,
   },
   messageList: {
     flexGrow: 1,
@@ -486,12 +519,27 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     gap: 0,
+    borderRadius: 0,
+  },
+  footerContent: {
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+  },
+  panelContent: {
+    width: '100%',
+    maxWidth: MaxContentWidth,
+    alignSelf: 'center',
+    borderTopLeftRadius: 0,
+    borderTopRightRadius: 0,
   },
   actionPanel: {
     flexDirection: 'row',
-    gap: Spacing.three,
-    paddingHorizontal: Spacing.three,
-    paddingTop: Spacing.three,
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
+    rowGap: Spacing.four,
+    paddingHorizontal: Spacing.four,
+    paddingTop: Spacing.four,
   },
   emojiPanel: {
     flexDirection: 'row',
@@ -511,23 +559,18 @@ const styles = StyleSheet.create({
     fontSize: 28,
     lineHeight: 34,
   },
-  voicePanel: {
-    minHeight: 128,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.two,
-  },
   actionTile: {
     alignItems: 'center',
     gap: Spacing.two,
-    width: 64,
+    width: '22%',
   },
   actionIcon: {
-    width: 54,
-    height: 54,
-    borderRadius: 12,
+    width: 62,
+    height: 62,
+    borderRadius: 14,
     alignItems: 'center',
     justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
   disabled: {
     opacity: 0.5,

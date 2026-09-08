@@ -3,7 +3,6 @@ import { useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
-import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -13,6 +12,7 @@ type PromptInputProps = {
   value: string;
   mode: PromptInputMode;
   disabled?: boolean;
+  submitting?: boolean;
   recording?: boolean;
   recordingDuration?: number;
   onChangeText: (value: string) => void;
@@ -29,6 +29,7 @@ export function PromptInput({
   value,
   mode,
   disabled,
+  submitting,
   recording,
   recordingDuration,
   onChangeText,
@@ -43,11 +44,15 @@ export function PromptInput({
   const theme = useTheme();
   const inputRef = useRef<TextInput>(null);
   const previousModeRef = useRef(mode);
-  const canSubmit = value.trim().length > 0 && !disabled;
+  const canSubmit = value.trim().length > 0 && !disabled && !submitting;
   const voiceMode = mode === 'voice';
 
   useEffect(() => {
-    if (mode === 'keyboard' && previousModeRef.current !== 'keyboard') {
+    if (
+      mode === 'keyboard' &&
+      previousModeRef.current !== 'keyboard' &&
+      previousModeRef.current !== 'voice'
+    ) {
       const timer = setTimeout(() => inputRef.current?.focus(), 80);
       previousModeRef.current = mode;
       return () => clearTimeout(timer);
@@ -58,9 +63,7 @@ export function PromptInput({
   }, [mode]);
 
   return (
-    <ThemedView
-      type="backgroundElement"
-      style={[styles.container, { borderColor: theme.backgroundSelected }]}>
+    <View style={styles.container}>
       <IconButton
         accessibilityLabel="语音"
         icon={
@@ -90,20 +93,31 @@ export function PromptInput({
             </ThemedText>
           </Pressable>
         ) : (
-          <TextInput
-            ref={inputRef}
-            value={value}
-            onChangeText={onChangeText}
-            onFocus={onFocusText}
-            placeholder="发消息"
-            placeholderTextColor={theme.textSecondary}
-            multiline
-            maxLength={1000}
-            editable={!disabled}
-            style={[styles.input, { backgroundColor: theme.background, color: theme.text }]}
-            returnKeyType="send"
-            onSubmitEditing={canSubmit ? onSubmit : undefined}
-          />
+          <View style={[styles.textInputShell, { backgroundColor: theme.background }]}>
+            <TextInput
+              ref={inputRef}
+              value={value}
+              onChangeText={onChangeText}
+              onFocus={onFocusText}
+              placeholder=""
+              placeholderTextColor={theme.textSecondary}
+              multiline
+              maxLength={1000}
+              editable={!disabled}
+              style={[styles.input, { color: theme.text }]}
+              returnKeyType="send"
+              enterKeyHint="send"
+              enablesReturnKeyAutomatically
+              blurOnSubmit={false}
+              submitBehavior="submit"
+              onSubmitEditing={canSubmit ? onSubmit : undefined}
+            />
+            <SymbolView
+              name={{ ios: 'mic', android: 'mic', web: 'mic' }}
+              size={22}
+              tintColor={theme.textSecondary}
+            />
+          </View>
         )}
       </View>
 
@@ -122,14 +136,15 @@ export function PromptInput({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="发送消息"
-          disabled={disabled}
+          disabled={disabled || submitting}
           onPress={onSubmit}
           style={({ pressed }) => [
             styles.sendButton,
             { backgroundColor: theme.text },
             pressed ? styles.pressed : null,
+            submitting ? styles.disabled : null,
           ]}>
-          {disabled ? (
+          {submitting ? (
             <ThemedText type="smallBold" themeColor="textSecondary">
               ...
             </ThemedText>
@@ -153,7 +168,7 @@ export function PromptInput({
           onPress={onToggleActions}
         />
       )}
-    </ThemedView>
+    </View>
   );
 }
 
@@ -178,7 +193,6 @@ function IconButton({
       onPress={onPress}
       style={({ pressed }) => [
         styles.iconButton,
-        { backgroundColor: theme.background },
         pressed && !disabled ? styles.pressed : null,
         disabled ? styles.disabled : null,
       ]}>
@@ -191,30 +205,37 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.two,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: 0,
-    paddingHorizontal: Spacing.two,
-    paddingVertical: Spacing.two,
+    gap: 10,
+    minHeight: 56,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
   },
   inputWrap: {
     flex: 1,
-    minHeight: 42,
+    minHeight: 40,
     maxHeight: 120,
     justifyContent: 'center',
   },
+  textInputShell: {
+    minHeight: 40,
+    maxHeight: 112,
+    borderRadius: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingRight: Spacing.two,
+  },
   input: {
+    flex: 1,
     fontSize: 16,
     lineHeight: 22,
     fontWeight: 500,
-    paddingHorizontal: Spacing.three,
-    paddingVertical: Spacing.two,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
     maxHeight: 112,
-    borderRadius: 6,
   },
   voiceInput: {
-    minHeight: 42,
-    borderRadius: 6,
+    minHeight: 40,
+    borderRadius: 4,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
@@ -223,16 +244,15 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     alignItems: 'center',
     justifyContent: 'center',
   },
