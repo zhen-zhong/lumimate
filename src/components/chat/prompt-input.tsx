@@ -14,7 +14,7 @@ const MAX_TEXT_INPUT_HEIGHT =
   TEXT_INPUT_LINE_HEIGHT * MAX_TEXT_INPUT_LINES + TEXT_INPUT_VERTICAL_PADDING * 2;
 const TEXT_INPUT_RIGHT_INSET = 38;
 
-export type PromptInputMode = 'keyboard' | 'voice' | 'emoji' | 'actions';
+export type PromptInputMode = 'idle' | 'keyboard' | 'voice' | 'emoji' | 'actions';
 
 type PromptInputProps = {
   value: string;

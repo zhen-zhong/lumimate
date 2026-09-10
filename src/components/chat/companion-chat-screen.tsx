@@ -24,6 +24,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  withTiming,
+} from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ChatMessageBubble } from '@/components/chat/message';
@@ -38,6 +43,8 @@ import { useTheme } from '@/hooks/use-theme';
 const STREAMING_THROTTLE_MS = 32;
 const CHAT_PANEL_HEIGHT = 236;
 const KEYBOARD_UNDERLAY = Platform.OS === 'ios' ? 10 : 0;
+const KEYBOARD_TRANSITION_MS = 220;
+const PANEL_TRANSITION_MS = 180;
 const MAP_TILE_ZOOM = 16;
 
 const MOCK_RESPONSES = [
@@ -63,7 +70,7 @@ async function streamMockResponse(
   }
 }
 
-type PanelMode = 'keyboard' | 'voice' | 'emoji' | 'actions';
+type PanelMode = 'idle' | 'keyboard' | 'voice' | 'emoji' | 'actions';
 type PendingImage = {
   uri: string;
   label: string;
@@ -156,6 +163,7 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
   const recordingStartedAtRef = useRef<number | null>(null);
   const recordingActiveRef = useRef(false);
   const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const keyboardAnimationDurationRef = useRef(KEYBOARD_TRANSITION_MS);
 
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -175,6 +183,38 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
       content: `嗨，我是 ${title}。现在是本地 mock 聊天，已经支持文本、图片、拍摄和语音录入。`,
     },
   ]);
+  const panelOpen = mode === 'emoji' || mode === 'actions';
+  const keyboardUnderlay = keyboardHeight > 0 && mode === 'keyboard' ? KEYBOARD_UNDERLAY : 0;
+  const footerBottom =
+    mode === 'keyboard' ? Math.max(0, keyboardHeight - keyboardUnderlay) : 0;
+  const footerBottomPadding =
+    keyboardHeight > 0 && mode === 'keyboard'
+      ? keyboardUnderlay
+      : panelOpen
+        ? 0
+        : insets.bottom + Spacing.two;
+  const listBottomPadding = footerHeight + footerBottom + Spacing.three;
+  const panelStyle = { height: CHAT_PANEL_HEIGHT + insets.bottom, paddingBottom: insets.bottom + Spacing.three };
+  const footerAnimatedStyle = useAnimatedStyle(() => ({
+    bottom: withTiming(footerBottom, {
+      duration: keyboardAnimationDurationRef.current,
+      easing: Easing.out(Easing.cubic),
+    }),
+  }), [footerBottom]);
+  const panelAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: withTiming(panelOpen ? 1 : 0, {
+      duration: PANEL_TRANSITION_MS,
+      easing: Easing.out(Easing.cubic),
+    }),
+    transform: [
+      {
+        translateY: withTiming(panelOpen ? 0 : 14, {
+          duration: PANEL_TRANSITION_MS,
+          easing: Easing.out(Easing.cubic),
+        }),
+      },
+    ],
+  }), [panelOpen]);
 
   const scrollToBottom = useCallback((animated = true) => {
     requestAnimationFrame(() => {
@@ -418,6 +458,16 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
     });
   }, [appendUserTurn, locationCandidates, selectedLocationId]);
 
+  const dismissInputAccessory = useCallback(() => {
+    if (mode === 'idle' && keyboardHeight <= 0) return;
+
+    keyboardAnimationDurationRef.current = PANEL_TRANSITION_MS;
+    Keyboard.dismiss();
+    setKeyboardHeight(0);
+    setMode('idle');
+    scheduleScrollToBottom();
+  }, [keyboardHeight, mode, scheduleScrollToBottom]);
+
   const showKeyboard = useCallback(() => {
     setMode('keyboard');
     scheduleScrollToBottom();
@@ -427,6 +477,7 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
     setMode((current) => {
       const next = current === nextMode ? 'keyboard' : nextMode;
       if (next !== 'keyboard') {
+        keyboardAnimationDurationRef.current = PANEL_TRANSITION_MS;
         setKeyboardHeight(0);
         Keyboard.dismiss();
       }
@@ -504,11 +555,22 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
     const changeEvent = Platform.OS === 'ios' ? 'keyboardWillChangeFrame' : 'keyboardDidShow';
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
 
-    const updateKeyboardHeight = (event: { endCoordinates?: { height?: number } }) => {
+    const updateKeyboardAnimationDuration = (duration?: number) => {
+      keyboardAnimationDurationRef.current = Math.max(
+        160,
+        Math.min(duration ?? KEYBOARD_TRANSITION_MS, 320),
+      );
+    };
+
+    const updateKeyboardHeight = (event: { duration?: number; endCoordinates?: { height?: number } }) => {
+      updateKeyboardAnimationDuration(event.duration);
       setKeyboardHeight(event.endCoordinates?.height ?? 0);
       scheduleScrollToBottom();
     };
-    const hideKeyboard = () => setKeyboardHeight(0);
+    const hideKeyboard = (event: { duration?: number }) => {
+      updateKeyboardAnimationDuration(event.duration);
+      setKeyboardHeight(0);
+    };
 
     const show = Keyboard.addListener(showEvent, updateKeyboardHeight);
     const change = Keyboard.addListener(changeEvent, updateKeyboardHeight);
@@ -540,19 +602,6 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
     [isGenerating, streamingStore],
   );
 
-  const panelOpen = mode === 'emoji' || mode === 'actions';
-  const keyboardUnderlay = keyboardHeight > 0 && mode === 'keyboard' ? KEYBOARD_UNDERLAY : 0;
-  const footerBottom =
-    mode === 'keyboard' ? Math.max(0, keyboardHeight - keyboardUnderlay) : 0;
-  const footerBottomPadding =
-    keyboardHeight > 0 && mode === 'keyboard'
-      ? keyboardUnderlay
-      : panelOpen
-        ? 0
-        : insets.bottom + Spacing.two;
-  const listBottomPadding = footerHeight + footerBottom + Spacing.three;
-  const panelStyle = { height: CHAT_PANEL_HEIGHT + insets.bottom, paddingBottom: insets.bottom + Spacing.three };
-
   useEffect(() => {
     scheduleScrollToBottom(false);
   }, [listBottomPadding, scheduleScrollToBottom]);
@@ -569,6 +618,7 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
             extraData={listBottomPadding}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
+            onTouchStart={dismissInputAccessory}
             contentContainerStyle={styles.messageList}
             ListFooterComponent={<View style={{ height: listBottomPadding }} />}
             onContentSizeChange={() => scheduleScrollToBottom(false)}
@@ -576,14 +626,14 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
           />
         </View>
 
-        <ThemedView
-          type="backgroundElement"
+        <Animated.View
           style={[
             styles.footer,
             {
-              bottom: footerBottom,
+              backgroundColor: theme.backgroundElement,
               paddingBottom: footerBottomPadding,
             },
+            footerAnimatedStyle,
           ]}
           onLayout={onFooterLayout}>
           <View style={styles.footerContent}>
@@ -604,74 +654,80 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
             />
           </View>
 
-          {mode === 'emoji' ? (
-            <View style={[styles.panelContent, styles.emojiPanel, panelStyle]}>
-              {['😀', '🥹', '❤️', '👍', '✨', '😭', '😂', '🤝'].map((emoji) => (
-                <Pressable
-                  key={emoji}
-                  accessibilityRole="button"
-                  accessibilityLabel={`输入表情 ${emoji}`}
-                  onPress={() => setInput((current) => `${current}${emoji}`)}
-                  style={({ pressed }) => [styles.emojiButton, pressed ? styles.pressed : null]}>
-                  <ThemedText style={styles.emojiText}>{emoji}</ThemedText>
-                </Pressable>
-              ))}
-            </View>
-          ) : null}
+          {panelOpen ? (
+            <Animated.View
+              pointerEvents="auto"
+              style={[styles.panelAnimator, panelAnimatedStyle]}>
+              {mode === 'emoji' ? (
+                <View style={[styles.panelContent, styles.emojiPanel, panelStyle]}>
+                  {['😀', '🥹', '❤️', '👍', '✨', '😭', '😂', '🤝'].map((emoji) => (
+                    <Pressable
+                      key={emoji}
+                      accessibilityRole="button"
+                      accessibilityLabel={`输入表情 ${emoji}`}
+                      onPress={() => setInput((current) => `${current}${emoji}`)}
+                      style={({ pressed }) => [styles.emojiButton, pressed ? styles.pressed : null]}>
+                      <ThemedText style={styles.emojiText}>{emoji}</ThemedText>
+                    </Pressable>
+                  ))}
+                </View>
+              ) : null}
 
-          {mode === 'actions' ? (
-            <View style={[styles.panelContent, styles.actionPanel, panelStyle]}>
-              <ActionTile
-                label="照片"
-                icon={{ ios: 'photo', android: 'image', web: 'image' }}
-                disabled={isGenerating}
-                onPress={pickImage}
-              />
-              <ActionTile
-                label="拍摄"
-                icon={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
-                disabled={isGenerating}
-                onPress={takePhoto}
-              />
-              <ActionTile
-                label="位置"
-                icon={{ ios: 'location.fill', android: 'location_on', web: 'location_on' }}
-                disabled={isGenerating}
-                onPress={openLocationPicker}
-              />
-              <ActionTile
-                label="语音输入"
-                icon={{ ios: 'mic.fill', android: 'mic', web: 'mic' }}
-                disabled={isGenerating}
-                onPress={() => togglePanel('voice')}
-              />
-              <ActionTile
-                label="收藏"
-                icon={{ ios: 'cube.fill', android: 'inventory_2', web: 'inventory_2' }}
-                disabled={isGenerating}
-                onPress={() => {}}
-              />
-              <ActionTile
-                label="个人名片"
-                icon={{ ios: 'person.fill', android: 'person', web: 'person' }}
-                disabled={isGenerating}
-                onPress={() => {}}
-              />
-              <ActionTile
-                label="文件"
-                icon={{ ios: 'folder.fill', android: 'folder', web: 'folder' }}
-                disabled={isGenerating}
-                onPress={() => {}}
-              />
-              <ActionTile
-                label="音乐"
-                icon={{ ios: 'music.note', android: 'music_note', web: 'music_note' }}
-                disabled={isGenerating}
-                onPress={() => {}}
-              />
-            </View>
+              {mode === 'actions' ? (
+                <View style={[styles.panelContent, styles.actionPanel, panelStyle]}>
+                  <ActionTile
+                    label="照片"
+                    icon={{ ios: 'photo', android: 'image', web: 'image' }}
+                    disabled={isGenerating}
+                    onPress={pickImage}
+                  />
+                  <ActionTile
+                    label="拍摄"
+                    icon={{ ios: 'camera.fill', android: 'photo_camera', web: 'photo_camera' }}
+                    disabled={isGenerating}
+                    onPress={takePhoto}
+                  />
+                  <ActionTile
+                    label="位置"
+                    icon={{ ios: 'location.fill', android: 'location_on', web: 'location_on' }}
+                    disabled={isGenerating}
+                    onPress={openLocationPicker}
+                  />
+                  <ActionTile
+                    label="语音输入"
+                    icon={{ ios: 'mic.fill', android: 'mic', web: 'mic' }}
+                    disabled={isGenerating}
+                    onPress={() => togglePanel('voice')}
+                  />
+                  <ActionTile
+                    label="收藏"
+                    icon={{ ios: 'cube.fill', android: 'inventory_2', web: 'inventory_2' }}
+                    disabled={isGenerating}
+                    onPress={() => {}}
+                  />
+                  <ActionTile
+                    label="个人名片"
+                    icon={{ ios: 'person.fill', android: 'person', web: 'person' }}
+                    disabled={isGenerating}
+                    onPress={() => {}}
+                  />
+                  <ActionTile
+                    label="文件"
+                    icon={{ ios: 'folder.fill', android: 'folder', web: 'folder' }}
+                    disabled={isGenerating}
+                    onPress={() => {}}
+                  />
+                  <ActionTile
+                    label="音乐"
+                    icon={{ ios: 'music.note', android: 'music_note', web: 'music_note' }}
+                    disabled={isGenerating}
+                    onPress={() => {}}
+                  />
+                </View>
+              ) : null}
+            </Animated.View>
           ) : null}
-        </ThemedView>
+        </Animated.View>
       </SafeAreaView>
 
       <ImagePreviewModal
@@ -932,6 +988,9 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     borderTopLeftRadius: 0,
     borderTopRightRadius: 0,
+  },
+  panelAnimator: {
+    width: '100%',
   },
   actionPanel: {
     flexDirection: 'row',
