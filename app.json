@@ -12,6 +12,7 @@
       "bundleIdentifier": "com.zhenzhong.lumimate"
     },
     "android": {
+      "package": "com.zhenzhong.lumimate",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -44,6 +45,15 @@
         "expo-location",
         {
           "locationWhenInUsePermission": "允许 LumiMate 使用当前位置，用于在聊天中发送位置。"
+        }
+      ],
+      [
+        "expo-gaode-map",
+        {
+          "androidKey": "your-android-key",
+          "iosKey": "e64c7d8eccee23ff895be20ac480c916",
+          "enableLocation": true,
+          "locationDescription": "允许 LumiMate 使用当前位置，用于展示地图和位置服务。"
         }
       ],
       [

@@ -192,8 +192,8 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
       ? keyboardUnderlay
       : panelOpen
         ? 0
-        : insets.bottom + Spacing.two;
-  const listBottomPadding = footerHeight + footerBottom + Spacing.three;
+        : insets.bottom;
+  const listBottomPadding = footerHeight + footerBottom + Spacing.two;
   const panelStyle = { height: CHAT_PANEL_HEIGHT + insets.bottom, paddingBottom: insets.bottom + Spacing.three };
   const footerAnimatedStyle = useAnimatedStyle(() => ({
     bottom: withTiming(footerBottom, {
