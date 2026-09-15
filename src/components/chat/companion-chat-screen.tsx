@@ -26,7 +26,12 @@ import {
 } from 'react-native';
 import Animated, {
   Easing,
+  FadeInUp,
+  FadeOutDown,
+  ReduceMotion,
   useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -46,6 +51,7 @@ const KEYBOARD_UNDERLAY = Platform.OS === 'ios' ? 10 : 0;
 const KEYBOARD_TRANSITION_MS = 220;
 const PANEL_TRANSITION_MS = 180;
 const MAP_TILE_ZOOM = 16;
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 const MOCK_RESPONSES = [
   '我在。先不急着解决所有事。你可以把今天最占心的一件事丢给我，我们慢慢拆。',
@@ -176,6 +182,8 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationCandidates, setLocationCandidates] = useState<LocationCandidate[]>([]);
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
+  const reducedMotion = useReducedMotion();
+  const footerOffset = useSharedValue(0);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: createMessageId(),
@@ -195,26 +203,18 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
         : insets.bottom;
   const listBottomPadding = footerHeight + footerBottom + Spacing.two;
   const panelStyle = { height: CHAT_PANEL_HEIGHT + insets.bottom, paddingBottom: insets.bottom + Spacing.three };
+  useEffect(() => {
+    footerOffset.set(
+      withTiming(footerBottom, {
+        duration: reducedMotion ? 160 : keyboardAnimationDurationRef.current,
+        easing: EASE_OUT,
+      }),
+    );
+  }, [footerBottom, footerOffset, reducedMotion]);
+
   const footerAnimatedStyle = useAnimatedStyle(() => ({
-    bottom: withTiming(footerBottom, {
-      duration: keyboardAnimationDurationRef.current,
-      easing: Easing.out(Easing.cubic),
-    }),
-  }), [footerBottom]);
-  const panelAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(panelOpen ? 1 : 0, {
-      duration: PANEL_TRANSITION_MS,
-      easing: Easing.out(Easing.cubic),
-    }),
-    transform: [
-      {
-        translateY: withTiming(panelOpen ? 0 : 14, {
-          duration: PANEL_TRANSITION_MS,
-          easing: Easing.out(Easing.cubic),
-        }),
-      },
-    ],
-  }), [panelOpen]);
+    transform: [{ translateY: -footerOffset.get() }],
+  }));
 
   const scrollToBottom = useCallback((animated = true) => {
     requestAnimationFrame(() => {
@@ -657,7 +657,13 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
           {panelOpen ? (
             <Animated.View
               pointerEvents="auto"
-              style={[styles.panelAnimator, panelAnimatedStyle]}>
+              entering={FadeInUp.duration(180)
+                .easing(EASE_OUT)
+                .reduceMotion(ReduceMotion.System)}
+              exiting={FadeOutDown.duration(140)
+                .easing(EASE_OUT)
+                .reduceMotion(ReduceMotion.System)}
+              style={styles.panelAnimator}>
               {mode === 'emoji' ? (
                 <View style={[styles.panelContent, styles.emojiPanel, panelStyle]}>
                   {['😀', '🥹', '❤️', '👍', '✨', '😭', '😂', '🤝'].map((emoji) => (
@@ -974,6 +980,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
+    bottom: 0,
     gap: 0,
     borderRadius: 0,
   },

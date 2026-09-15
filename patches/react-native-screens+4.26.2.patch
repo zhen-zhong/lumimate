@@ -1,5 +1,5 @@
 diff --git a/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm b/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
-index 481a9e6..7c0e4fb 100644
+index 481a9e6..bff72f1 100644
 --- a/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
 +++ b/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
 @@ -89,6 +89,8 @@ @implementation RNSTabBarController {
@@ -37,8 +37,8 @@ index 481a9e6..7c0e4fb 100644
 +
 +  const NSUInteger animationToken = ++_tabBarVisibilityAnimationToken;
 +  const CGFloat hiddenOffset = CGRectGetHeight(self.tabBar.bounds) + self.view.safeAreaInsets.bottom;
-+  const NSTimeInterval duration = hidden ? 0.32 : 0.36;
-+  const UIViewAnimationOptions options = UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseInOut;
++  const NSTimeInterval duration = hidden ? 0.24 : 0.28;
++  const UIViewAnimationOptions options = UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseOut;
 +
 +  if (!hidden && _tabBarHiddenByCustomTransition) {
 +    [super setTabBarHidden:NO animated:NO];

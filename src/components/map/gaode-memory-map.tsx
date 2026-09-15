@@ -1,9 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import * as Haptics from 'expo-haptics';
+import { SymbolView, type AndroidSymbol, type SFSymbol } from 'expo-symbols';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   clearIndependentRoute,
   DriveStrategy,
   ExpoGaodeMapModule,
   ExpoGaodeMapNaviView,
+  NaviSpeedometer,
   independentDriveRoute,
   independentRideRoute,
   independentWalkRoute,
@@ -32,11 +35,21 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  FadeInUp,
+  FadeOutDown,
+  ReduceMotion,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
-import { BottomNavigationGap, BottomNavigationHeight, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTabBarVisibility } from '@/context/tab-bar-context';
 import { useTheme } from '@/hooks/use-theme';
 
@@ -47,6 +60,9 @@ const ROUTE_BLUE = '#3185F7';
 const ROUTE_REQUEST_TIMEOUT_MS = 15_000;
 const MAX_ROUTE_POLYLINE_POINTS = 600;
 const MAP_CONTROLS_HIDDEN_TRANSLATE_Y = -220;
+const MAP_CONTROLS_HIDE_DURATION_MS = 240;
+const MAP_CONTROLS_SHOW_DURATION_MS = 280;
+const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 type SearchLocation = Pick<POI, 'id' | 'name' | 'address' | 'location'>;
 type SearchHistoryItem = SearchLocation & { searchedAt: string };
@@ -59,14 +75,16 @@ type NaviInfo = {
   curStepRetainDistance?: number;
   currentRoadName: string;
   nextRoadName: string;
+  currentSpeed?: number;
+  routeRemainTrafficLightCount?: number;
 };
 type TrafficStatus = NaviTrafficStatusesEvent['items'][number];
 
-const TRAVEL_MODES: { key: TravelMode; label: string; glyph: string }[] = [
-  { key: 'drive', label: '驾车', glyph: '▰' },
-  { key: 'ride', label: '骑行', glyph: '♧' },
-  { key: 'walk', label: '步行', glyph: '♙' },
-  { key: 'transit', label: '地铁', glyph: '⊞' },
+const TRAVEL_MODES: { key: TravelMode; label: string; icon: { ios: SFSymbol; android: AndroidSymbol; web: AndroidSymbol } }[] = [
+  { key: 'drive', label: '驾车', icon: { ios: 'car.fill', android: 'directions_car', web: 'directions_car' } },
+  { key: 'ride', label: '骑行', icon: { ios: 'bicycle', android: 'directions_bike', web: 'directions_bike' } },
+  { key: 'walk', label: '步行', icon: { ios: 'figure.walk', android: 'directions_walk', web: 'directions_walk' } },
+  { key: 'transit', label: '地铁', icon: { ios: 'tram.fill', android: 'directions_transit', web: 'directions_transit' } },
 ];
 
 let privacyConfigured = false;
@@ -202,11 +220,15 @@ function ensureGaodePrivacyReady() {
 
 export function GaodeMemoryMap() {
   const theme = useTheme();
+  const safeAreaInsets = useSafeAreaInsets();
   const { setTabBarHidden } = useTabBarVisibility();
   const mapRef = useRef<MapViewRef>(null);
   const naviRef = useRef<ExpoGaodeMapNaviViewRef>(null);
   const routeRequestIdRef = useRef(0);
   const mapControlsVisibleRef = useRef(true);
+  const hasCenteredOnUserLocationRef = useRef(false);
+  const hasSettledInitialCameraRef = useRef(false);
+  const isProgrammaticCameraMoveRef = useRef(false);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<POI[]>([]);
   const [selectedPoi, setSelectedPoi] = useState<SearchLocation | null>(null);
@@ -220,9 +242,11 @@ export function GaodeMemoryMap() {
   const [selectedRouteIndex, setSelectedRouteIndex] = useState(0);
   const [routeToken, setRouteToken] = useState<number | null>(null);
   const [routeStart, setRouteStart] = useState<SearchLocation['location'] | null>(null);
+  const [userLocation, setUserLocation] = useState<SearchLocation['location'] | null>(null);
+  const [routeReversed, setRouteReversed] = useState(false);
   const [isPlanningRoute, setIsPlanningRoute] = useState(false);
   const [routeMessage, setRouteMessage] = useState('');
-  const [isTrackingLocation, setIsTrackingLocation] = useState(false);
+  const [mapReady, setMapReady] = useState(false);
   const [routeDetailsOpen, setRouteDetailsOpen] = useState(false);
   const [navigationOpen, setNavigationOpen] = useState(false);
   const [navigationStarting, setNavigationStarting] = useState(false);
@@ -230,8 +254,33 @@ export function GaodeMemoryMap() {
   const [naviInfo, setNaviInfo] = useState<NaviInfo | null>(null);
   const [trafficStatuses, setTrafficStatuses] = useState<TrafficStatus[]>([]);
   const [mapControlsHidden, setMapControlsHidden] = useState(false);
+  const reducedMotion = useReducedMotion();
   const mapControlsProgress = useSharedValue(1);
   const routePreview = routeOptions[selectedRouteIndex] ?? null;
+
+  const moveMapCamera = useCallback(async (target: SearchLocation['location'], zoom: number, duration: number) => {
+    const map = mapRef.current;
+    if (!map) return;
+    isProgrammaticCameraMoveRef.current = true;
+    try {
+      await map.moveCamera({ target, zoom }, duration);
+    } catch (error) {
+      isProgrammaticCameraMoveRef.current = false;
+      throw error;
+    }
+  }, []);
+
+  const fitMapToCoordinates = useCallback(async (coordinates: NonNullable<RoutePreview['polyline']>) => {
+    const map = mapRef.current;
+    if (!map) return;
+    isProgrammaticCameraMoveRef.current = true;
+    try {
+      await map.fitToCoordinates(coordinates);
+    } catch (error) {
+      isProgrammaticCameraMoveRef.current = false;
+      throw error;
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -251,15 +300,31 @@ export function GaodeMemoryMap() {
   useEffect(() => () => setTabBarHidden(false), [setTabBarHidden]);
 
   useEffect(() => {
-    mapControlsProgress.value = withTiming(mapControlsHidden ? 0 : 1, {
-      duration: mapControlsHidden ? 320 : 360,
-      easing: Easing.inOut(Easing.cubic),
-    });
-  }, [mapControlsHidden, mapControlsProgress]);
+    setTabBarHidden(Boolean(selectedPoi) || !mapControlsVisibleRef.current);
+  }, [selectedPoi, setTabBarHidden]);
+
+  useEffect(() => {
+    mapControlsProgress.set(
+      withTiming(mapControlsHidden ? 0 : 1, {
+        duration: reducedMotion
+          ? 160
+          : mapControlsHidden
+            ? MAP_CONTROLS_HIDE_DURATION_MS
+            : MAP_CONTROLS_SHOW_DURATION_MS,
+        easing: EASE_OUT,
+      }),
+    );
+  }, [mapControlsHidden, mapControlsProgress, reducedMotion]);
 
   const mapControlsAnimatedStyle = useAnimatedStyle(() => ({
-    opacity: mapControlsProgress.value,
-    transform: [{ translateY: (1 - mapControlsProgress.value) * MAP_CONTROLS_HIDDEN_TRANSLATE_Y }],
+    opacity: mapControlsProgress.get(),
+    transform: [
+      {
+        translateY: reducedMotion
+          ? 0
+          : (1 - mapControlsProgress.get()) * MAP_CONTROLS_HIDDEN_TRANSLATE_Y,
+      },
+    ],
   }));
 
   useEffect(() => {
@@ -284,16 +349,36 @@ export function GaodeMemoryMap() {
   }, [query, searchOpen]);
 
   useEffect(() => {
-    if (!isTrackingLocation) return;
+    let isMounted = true;
+    const updateLocation = (location: SearchLocation['location']) => {
+      if (isMounted) setUserLocation({ latitude: location.latitude, longitude: location.longitude });
+    };
     const subscription = ExpoGaodeMapModule.addLocationListener((location) => {
-      setRouteStart({ latitude: location.latitude, longitude: location.longitude });
+      updateLocation(location);
     });
-    ExpoGaodeMapModule.start();
+    void (async () => {
+      let permission = await ExpoGaodeMapModule.checkLocationPermission();
+      if (!permission.granted) permission = await ExpoGaodeMapModule.requestLocationPermission();
+      if (!permission.granted || !isMounted) return;
+      ExpoGaodeMapModule.start();
+      try {
+        updateLocation(await withRouteTimeout(ExpoGaodeMapModule.getCurrentLocation()));
+      } catch {
+        // The location listener can still provide a later GPS update.
+      }
+    })();
     return () => {
+      isMounted = false;
       subscription.remove();
       ExpoGaodeMapModule.stop();
     };
-  }, [isTrackingLocation]);
+  }, []);
+
+  useEffect(() => {
+    if (!mapReady || !userLocation || hasCenteredOnUserLocationRef.current) return;
+    hasCenteredOnUserLocationRef.current = true;
+    void moveMapCamera(userLocation, 16, 350).catch(() => undefined);
+  }, [mapReady, moveMapCamera, userLocation]);
 
   useEffect(() => {
     if (!navigationOpen || routeToken === null) return;
@@ -339,7 +424,7 @@ export function GaodeMemoryMap() {
     if (mapControlsVisibleRef.current === visible) return;
     mapControlsVisibleRef.current = visible;
     setMapControlsHidden(!visible);
-    setTabBarHidden(!visible);
+    setTabBarHidden(Boolean(selectedPoi) || !visible);
   };
 
   const closeSearch = () => {
@@ -368,10 +453,12 @@ export function GaodeMemoryMap() {
     setSelectedRouteIndex(0);
     setRouteToken(null);
     setRouteMessage('');
+    setRouteReversed(false);
     setRouteDetailsOpen(false);
+    setTabBarHidden(false);
   };
 
-  const planRoute = async (mode: TravelMode, destination = selectedPoi) => {
+  const planRoute = async (mode: TravelMode, destination = selectedPoi, reversed = routeReversed) => {
     if (!destination) return;
     const requestId = ++routeRequestIdRef.current;
     if (routeToken !== null) void clearIndependentRoute({ token: routeToken }).catch(() => undefined);
@@ -389,7 +476,7 @@ export function GaodeMemoryMap() {
     try {
       // 模式切换必须复用已规划路线的起点。重复调用原生定位在 iOS 上可能不回调，
       // 会让骑行/步行一直停留在加载态。
-      let from = routeStart && isSafeCoordinate(routeStart) ? routeStart : null;
+      let from = routeStart && isSafeCoordinate(routeStart) ? routeStart : userLocation && isSafeCoordinate(userLocation) ? userLocation : null;
       if (!from) {
         let permission = await ExpoGaodeMapModule.checkLocationPermission();
         if (!permission.granted) permission = await ExpoGaodeMapModule.requestLocationPermission();
@@ -398,12 +485,12 @@ export function GaodeMemoryMap() {
         if (requestId !== routeRequestIdRef.current) return;
         from = { latitude: location.latitude, longitude: location.longitude };
         setRouteStart(from);
-        setIsTrackingLocation(true);
       }
-      const base = {
-        from: { ...from, name: '我的位置' },
-        to: { ...destination.location, name: destination.name, poiId: destination.id },
-      };
+      const currentPosition = { ...from, name: '我的位置' };
+      const destinationPosition = { ...destination.location, name: destination.name, poiId: destination.id };
+      const base = reversed
+        ? { from: destinationPosition, to: currentPosition }
+        : { from: currentPosition, to: destinationPosition };
       const result =
         mode === 'drive'
           ? await withRouteTimeout(independentDriveRoute({ ...base, strategy: DriveStrategy.FASTEST }))
@@ -422,9 +509,8 @@ export function GaodeMemoryMap() {
       const mainRoute = routes[mainRouteIndex];
       if (mainRoute.polyline && mainRoute.polyline.length > 1) {
         setTimeout(() => {
-          const map = mapRef.current;
           try {
-            if (map) void map.fitToCoordinates(mainRoute.polyline!).catch(() => undefined);
+            void fitMapToCoordinates(mainRoute.polyline!).catch(() => undefined);
           } catch {
             // Invalid native map state must not take down the route screen.
           }
@@ -440,12 +526,12 @@ export function GaodeMemoryMap() {
   const selectRoute = async (index: number) => {
     const route = routeOptions[index];
     if (!route) return;
+    if (index !== selectedRouteIndex) Haptics.selectionAsync().catch(() => undefined);
     setSelectedRouteIndex(index);
     if (routeToken !== null) void selectIndependentRoute({ token: routeToken, routeIndex: index }).catch(() => undefined);
     if (route.polyline && route.polyline.length > 1) {
-      const map = mapRef.current;
       try {
-        if (map) await map.fitToCoordinates(route.polyline);
+        await fitMapToCoordinates(route.polyline);
       } catch {
         // Keep the selected route visible even if camera fitting fails.
       }
@@ -458,19 +544,28 @@ export function GaodeMemoryMap() {
       return;
     }
     Keyboard.dismiss();
+    setTabBarHidden(true);
     setSelectedPoi(poi);
+    setRouteReversed(false);
     setQuery('');
     setSearchHistory((items) =>
       [{ ...poi, searchedAt: new Date().toISOString() }, ...items.filter((item) => item.id !== poi.id)].slice(0, MAX_SEARCH_HISTORY_ITEMS)
     );
     closeSearch();
-    const map = mapRef.current;
     try {
-      if (map) await map.moveCamera({ target: poi.location, zoom: 16 }, 350);
+      await moveMapCamera(poi.location, 16, 350);
     } catch {
       // The route calculation can continue when a transient camera update fails.
     }
-    void planRoute('drive', poi);
+    void planRoute('drive', poi, false);
+  };
+
+  const reverseRouteDirection = () => {
+    if (!selectedPoi || isPlanningRoute) return;
+    const reversed = !routeReversed;
+    setRouteReversed(reversed);
+    Haptics.selectionAsync().catch(() => undefined);
+    void planRoute(travelMode, selectedPoi, reversed);
   };
 
   const openNavigation = () => {
@@ -486,7 +581,7 @@ export function GaodeMemoryMap() {
       pathRetainTime: routePreview.duration,
       curStepRetainDistance: routePreview.segments?.[0]?.distance,
       currentRoadName: '正在准备导航',
-      nextRoadName: selectedPoi?.name || '',
+      nextRoadName: routeReversed ? '我的位置' : selectedPoi?.name || '',
     });
     setNavigationOpen(true);
   };
@@ -510,11 +605,23 @@ export function GaodeMemoryMap() {
   const currentRoadName = getNamedRoadName(naviInfo?.currentRoadName);
   const displayedRoadName = nextRoadName || currentRoadName || '前方道路';
   const hideMapControls = () => {
-    if (searchOpen) return;
+    if (searchOpen || !hasSettledInitialCameraRef.current || isProgrammaticCameraMoveRef.current) return;
     setMapControlsVisibility(false);
   };
   const showMapControls = () => {
     setMapControlsVisibility(true);
+  };
+  const handleCameraIdle = () => {
+    if (!hasSettledInitialCameraRef.current) {
+      hasSettledInitialCameraRef.current = true;
+      isProgrammaticCameraMoveRef.current = false;
+      return;
+    }
+    if (isProgrammaticCameraMoveRef.current) {
+      isProgrammaticCameraMoveRef.current = false;
+      return;
+    }
+    showMapControls();
   };
 
   return (
@@ -526,12 +633,12 @@ export function GaodeMemoryMap() {
         initialCameraPosition={{ target: LUMIMATE_COORDINATE, zoom: 13 }}
         myLocationEnabled
         followUserLocation={false}
+        onLoad={() => setMapReady(true)}
         compassEnabled={false}
         scaleControlsEnabled
         zoomControlsEnabled={false}
         onCameraMove={hideMapControls}
-        onCameraIdle={showMapControls}>
-        <Marker position={LUMIMATE_COORDINATE} title="LumiMate" />
+        onCameraIdle={handleCameraIdle}>
         {routeStart ? <Marker position={routeStart} title="我的位置" /> : null}
         {selectedPoi ? <Marker position={selectedPoi.location} title={selectedPoi.name} /> : null}
         {routeOptions.map((route, index) =>
@@ -553,23 +660,39 @@ export function GaodeMemoryMap() {
         style={[styles.mapControlsOverlay, mapControlsAnimatedStyle]}>
           {selectedPoi ? (
             <>
-              <View style={[styles.routeHeader, { backgroundColor: theme.background }]}>
+              <View
+                style={[
+                  styles.routeHeader,
+                  { backgroundColor: theme.background, minHeight: safeAreaInsets.top + 70, paddingTop: safeAreaInsets.top + 4 },
+                ]}>
             <Pressable accessibilityRole="button" accessibilityLabel="退出路线规划" onPress={clearRoute} style={styles.routeBackButton}>
-              <Text style={[styles.routeBackGlyph, { color: theme.text }]}>‹</Text>
+              <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={20} tintColor={theme.text} />
             </Pressable>
-            <Pressable accessibilityRole="button" accessibilityLabel="重新搜索目的地" onPress={openSearch} style={styles.routeLocations}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="重新搜索目的地"
+              onPress={openSearch}
+              style={[styles.routeLocations, { backgroundColor: theme.backgroundElement }]}>
               <View style={styles.routeLocationRow}>
                 <View style={[styles.locationDot, styles.startDot]} />
-                <Text numberOfLines={1} style={[styles.routeLocationText, { color: theme.text }]}>我的位置</Text>
+                <Text numberOfLines={1} style={[styles.routeLocationText, { color: theme.text }]}>{routeReversed ? selectedPoi.name : '我的位置'}</Text>
               </View>
               <View style={styles.routeLocationDivider} />
               <View style={styles.routeLocationRow}>
                 <View style={[styles.locationDot, styles.endDot]} />
-                <Text numberOfLines={1} style={[styles.routeLocationText, { color: theme.text }]}>{selectedPoi.name}</Text>
+                <Text numberOfLines={1} style={[styles.routeLocationText, { color: theme.text }]}>{routeReversed ? '我的位置' : selectedPoi.name}</Text>
               </View>
             </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="反转起点和终点"
+              disabled={isPlanningRoute}
+              onPress={reverseRouteDirection}
+              style={({ pressed }) => [styles.routeSwapButton, isPlanningRoute && styles.routeModeTabDisabled, pressed && styles.routeSwapButtonPressed]}>
+              <SymbolView name={{ ios: 'arrow.up.arrow.down', android: 'swap_vert', web: 'swap_vert' }} size={20} tintColor={ROUTE_BLUE} />
+            </Pressable>
               </View>
-              <View style={[styles.routeModeTabs, { backgroundColor: theme.background }]}>
+              <View style={[styles.routeModeTabs, { backgroundColor: theme.background, top: safeAreaInsets.top + 70 }]}>
             {TRAVEL_MODES.map((mode) => {
               const selected = mode.key === travelMode;
               return (
@@ -577,9 +700,12 @@ export function GaodeMemoryMap() {
                   key={mode.key}
                   accessibilityRole="button"
                   disabled={isPlanningRoute}
-                  onPress={() => void planRoute(mode.key)}
+                  onPress={() => {
+                    Haptics.selectionAsync().catch(() => undefined);
+                    void planRoute(mode.key);
+                  }}
                   style={[styles.routeModeTab, selected && styles.routeModeTabSelected, isPlanningRoute && styles.routeModeTabDisabled]}>
-                  <Text style={[styles.routeModeGlyph, { color: selected ? ROUTE_BLUE : theme.textSecondary }]}>{mode.glyph}</Text>
+                  <SymbolView name={mode.icon} size={20} tintColor={selected ? ROUTE_BLUE : theme.textSecondary} />
                   <Text style={[styles.routeModeText, { color: selected ? ROUTE_BLUE : theme.textSecondary }]}>{mode.label}</Text>
                 </Pressable>
               );
@@ -597,14 +723,25 @@ export function GaodeMemoryMap() {
         <Pressable
           accessibilityRole="button"
           accessibilityLabel="定位到当前位置"
-          onPress={() => void mapRef.current?.moveCamera({ target: routeStart || LUMIMATE_COORDINATE, zoom: 16 }, 300)}
-          style={[styles.locateButton, { backgroundColor: theme.background }]}>
-          <Text style={[styles.locateGlyph, { color: theme.text }]}>◎</Text>
+          onPress={() => void moveMapCamera(userLocation || routeStart || LUMIMATE_COORDINATE, 16, 300)}
+          style={({ pressed }) => [
+            styles.locateButton,
+            pressed && styles.locateButtonPressed,
+          ]}>
+          <SymbolView
+            name={{ ios: 'location.north.fill', android: 'my_location', web: 'my_location' }}
+            size={22}
+            tintColor="#FFFFFF"
+          />
         </Pressable>
       ) : null}
 
       {selectedPoi ? (
-        <View style={[styles.routeSheet, { backgroundColor: theme.background }]}>
+        <Animated.View
+          entering={FadeInUp.duration(220).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+          exiting={FadeOutDown.duration(140).easing(EASE_OUT).reduceMotion(ReduceMotion.System)}
+          style={styles.routeSheet}>
+          <View style={[styles.routeSheetSurface, { backgroundColor: theme.background }]}>
           {isPlanningRoute ? (
             <View style={styles.routeLoading}>
               <ActivityIndicator color={ROUTE_BLUE} size="small" />
@@ -612,36 +749,108 @@ export function GaodeMemoryMap() {
             </View>
           ) : routePreview ? (
             <>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.routeCardList} style={styles.routeCardScroll}>
-                {routeOptions.map((route, index) => {
+              <View style={styles.routeSheetHandle} />
+              <View style={styles.routeSheetHeader}>
+                <View style={styles.routeEndpoints}>
+                  <View style={styles.routeEndpointRow}>
+                    <View style={[styles.routeEndpointDot, styles.routeEndpointStartDot]} />
+                    <View style={styles.routeEndpointCopy}>
+                      <Text style={[styles.routeEndpointLabel, { color: theme.textSecondary }]}>出发地</Text>
+                      <Text numberOfLines={1} style={[styles.routeEndpointName, { color: theme.text }]}>{routeReversed ? selectedPoi.name : '我的位置'}</Text>
+                    </View>
+                  </View>
+                  <View style={styles.routeEndpointConnector} />
+                  <View style={styles.routeEndpointRow}>
+                    <View style={[styles.routeEndpointDot, styles.routeEndpointEndDot]} />
+                    <View style={styles.routeEndpointCopy}>
+                      <Text style={[styles.routeEndpointLabel, { color: theme.textSecondary }]}>目的地</Text>
+                      <Text numberOfLines={1} style={[styles.routeEndpointName, { color: theme.text }]}>{routeReversed ? '我的位置' : selectedPoi.name}</Text>
+                    </View>
+                  </View>
+                </View>
+                <View style={styles.routeArrivalBadge}>
+                  <Text style={styles.routeArrivalLabel}>预计到达</Text>
+                  <Text style={styles.routeArrivalTime}>{formatArrivalTime(routePreview.duration).slice(0, 5)}</Text>
+                </View>
+              </View>
+              <View style={styles.routeCardList}>
+                {routeOptions.slice(0, 3).map((route, index) => {
                   const selected = index === selectedRouteIndex;
+                  const segmentCount = route.segments?.length;
                   return (
                     <Pressable
                       key={`${route.id}-${index}`}
                       accessibilityRole="button"
                       onPress={() => void selectRoute(index)}
-                      style={[styles.routeCard, { backgroundColor: theme.backgroundElement, borderColor: selected ? ROUTE_BLUE : 'transparent' }]}>
-                      <Text style={[styles.routeCardDuration, { color: theme.text }]}>{formatDuration(route.duration)}</Text>
-                      <Text style={[styles.routeCardDistance, { color: theme.textSecondary }]}>{formatDistance(route.distance)}</Text>
-                      <Text style={[styles.routeCardLabel, { color: selected ? ROUTE_BLUE : theme.textSecondary }]}>{index === 0 ? '推荐' : `备选 ${index}`}</Text>
+                      style={({ pressed }) => [
+                        styles.routeCard,
+                        {
+                          backgroundColor: selected ? '#F1F7FF' : theme.backgroundElement,
+                          borderColor: selected ? ROUTE_BLUE : 'transparent',
+                        },
+                        pressed && styles.routeCardPressed,
+                      ]}>
+                      <View style={styles.routeCardTopLine}>
+                        <Text style={[styles.routeCardBadge, { color: selected ? ROUTE_BLUE : theme.textSecondary, backgroundColor: selected ? '#DDEEFF' : theme.background }]}>
+                          {index === 0 ? '推荐' : `方案 ${index + 1}`}
+                        </Text>
+                      </View>
+                      <Text style={[styles.routeCardDuration, { color: selected ? ROUTE_BLUE : theme.text }]}>{formatDuration(route.duration)}</Text>
+                      <Text style={[styles.routeCardDistance, { color: theme.textSecondary }]}>
+                        {formatDistance(route.distance)}{segmentCount ? ` · ${segmentCount} 个路段` : ''}
+                      </Text>
+                      <Text style={[styles.routeCardLabel, { color: selected ? ROUTE_BLUE : theme.textSecondary }]}>
+                        {selected ? '已选路线' : '点击选择'}
+                      </Text>
                     </Pressable>
                   );
                 })}
-              </ScrollView>
+              </View>
               <View style={styles.routeActionBar}>
-                <Pressable accessibilityRole="button" onPress={() => setRouteDetailsOpen(true)} style={styles.routeDetailAction}>
-                  <Text style={[styles.routeDetailActionGlyph, { color: theme.text }]}>≡</Text>
-                  <Text style={[styles.routeDetailActionText, { color: theme.text }]}>路线详情</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => setRouteDetailsOpen(true)}
+                  style={({ pressed }) => [styles.routeDetailAction, { borderColor: theme.backgroundSelected }, pressed && styles.routeActionPressed]}>
+                  <SymbolView
+                    name={{ ios: 'list.bullet', android: 'format_list_bulleted', web: 'format_list_bulleted' }}
+                    size={19}
+                    tintColor={theme.text}
+                  />
+                  <Text style={[styles.routeDetailActionText, { color: theme.textSecondary }]}>详情</Text>
                 </Pressable>
-                <Pressable accessibilityRole="button" onPress={openNavigation} style={styles.startNavigationButton}>
-                  <Text style={styles.startNavigationText}>开始导航</Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`开始导航，${formatDuration(routePreview.duration)}，${formatDistance(routePreview.distance)}`}
+                  onPress={openNavigation}
+                  style={({ pressed }) => [styles.startNavigationButton, pressed && styles.startNavigationButtonPressed]}>
+                  <View style={styles.startNavigationIcon}>
+                    <SymbolView
+                      name={{ ios: 'location.north.fill', android: 'navigation', web: 'navigation' }}
+                      size={22}
+                      tintColor="#FFFFFF"
+                    />
+                  </View>
+                  <View style={styles.startNavigationCopy}>
+                    <Text style={styles.startNavigationText}>开始导航</Text>
+                    <Text style={styles.startNavigationMeta}>
+                      {formatDuration(routePreview.duration)} · {formatDistance(routePreview.distance)}
+                    </Text>
+                  </View>
+                  <View style={styles.startNavigationArrow}>
+                    <SymbolView
+                      name={{ ios: 'chevron.right', android: 'arrow_forward', web: 'arrow_forward' }}
+                      size={18}
+                      tintColor={ROUTE_BLUE}
+                    />
+                  </View>
                 </Pressable>
               </View>
             </>
           ) : (
             <Text style={[styles.routeStatus, { color: theme.textSecondary }]}>{routeMessage || '请选择出行方式'}</Text>
           )}
-        </View>
+          </View>
+        </Animated.View>
       ) : null}
 
       <Modal animationType="slide" visible={routeDetailsOpen && Boolean(routePreview)} onRequestClose={() => setRouteDetailsOpen(false)}>
@@ -705,15 +914,32 @@ export function GaodeMemoryMap() {
           />
           <View pointerEvents="box-none" style={styles.navigationOverlay}>
             <View style={styles.navigationHud}>
-              <Text style={styles.navigationArrow}>↑</Text>
+              <View style={styles.navigationTurnIcon}>
+                <SymbolView
+                  name={{ ios: 'arrow.up', android: 'straight', web: 'arrow_upward' }}
+                  size={36}
+                  tintColor="#FFFFFF"
+                />
+              </View>
               <View style={styles.navigationInstruction}>
-                <Text style={styles.navigationTurnDistance}>{formatDistance(turnDistance)}</Text>
+                <Text style={styles.navigationActionLabel}>前方 {formatDistance(turnDistance)}</Text>
                 <Text numberOfLines={1} style={styles.navigationRoadName}>{displayedRoadName}</Text>
                 <Text numberOfLines={1} style={styles.navigationCurrentRoad}>
                   {currentRoadName && currentRoadName !== nextRoadName ? `沿 ${currentRoadName} 行驶` : '请按路线行驶'}
                 </Text>
               </View>
-              <Text style={styles.navigationVoice}>◔</Text>
+              <View style={styles.navigationHudStatus}>
+                <Text style={styles.navigationHudStatusValue}>{navigationOverview ? '全览' : '跟随'}</Text>
+                <Text style={styles.navigationHudStatusLabel}>导航中</Text>
+              </View>
+            </View>
+            <View pointerEvents="none" style={styles.navigationSpeedometerShell}>
+              <NaviSpeedometer
+                speed={naviInfo?.currentSpeed}
+                size={76}
+                color={ROUTE_BLUE}
+                backgroundColor="#FFFFFF"
+              />
             </View>
             {trafficStatuses.length ? (
               <View pointerEvents="none" style={styles.navigationTrafficBar}>
@@ -738,16 +964,45 @@ export function GaodeMemoryMap() {
               </View>
             ) : null}
             <View style={styles.navigationBottomBar}>
-              <Pressable accessibilityRole="button" onPress={() => void closeNavigation()} style={styles.navigationExit}>
-                <Text style={styles.navigationExitGlyph}>×</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="退出导航"
+                onPress={() => void closeNavigation()}
+                style={({ pressed }) => [styles.navigationExit, pressed && styles.navigationControlPressed]}>
+                <View style={styles.navigationControlIcon}>
+                  <SymbolView
+                    name={{ ios: 'xmark', android: 'close', web: 'close' }}
+                    size={19}
+                    tintColor="#152033"
+                  />
+                </View>
                 <Text style={styles.navigationExitText}>退出</Text>
               </Pressable>
               <View style={styles.navigationSummary}>
-                <Text style={styles.navigationSummaryMain}>{formatDuration(navigationDuration)} {formatDistance(navigationDistance)}</Text>
+                <Text numberOfLines={1} style={styles.navigationDestination}>{selectedPoi?.name || '目的地'}</Text>
+                <View style={styles.navigationSummaryStats}>
+                  <Text style={styles.navigationSummaryMain}>{formatDuration(navigationDuration)}</Text>
+                  <View style={styles.navigationSummaryDot} />
+                  <Text style={styles.navigationSummaryDistance}>{formatDistance(navigationDistance)}</Text>
+                </View>
                 <Text style={styles.navigationSummaryArrival}>{formatArrivalTime(navigationDuration)}</Text>
               </View>
-              <Pressable accessibilityRole="button" onPress={() => setNavigationOverview((value) => !value)} style={styles.navigationOverviewButton}>
-                <Text style={styles.navigationOverviewGlyph}>{navigationOverview ? '⌖' : '⌁'}</Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={navigationOverview ? '切换为跟随视角' : '切换为全览视角'}
+                onPress={() => setNavigationOverview((value) => !value)}
+                style={({ pressed }) => [styles.navigationOverviewButton, pressed && styles.navigationControlPressed]}>
+                <View style={styles.navigationControlIcon}>
+                  <SymbolView
+                    name={
+                      navigationOverview
+                        ? { ios: 'location.north.fill', android: 'my_location', web: 'my_location' }
+                        : { ios: 'map.fill', android: 'map', web: 'map' }
+                    }
+                    size={19}
+                    tintColor="#152033"
+                  />
+                </View>
                 <Text style={styles.navigationOverviewText}>{navigationOverview ? '跟随' : '全览'}</Text>
               </Pressable>
             </View>
@@ -843,54 +1098,76 @@ const styles = StyleSheet.create({
   },
   searchTriggerText: { fontSize: 16 },
   routeHeader: {
-    position: 'absolute', top: Platform.select({ ios: 50, default: 18 }), right: Spacing.three, left: Spacing.three,
-    minHeight: 82, flexDirection: 'row', alignItems: 'center', borderRadius: 16, padding: Spacing.two,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 12, elevation: 5,
+    position: 'absolute', top: 0, right: 0, left: 0,
+    flexDirection: 'row', alignItems: 'center', gap: 6,
+    paddingRight: Spacing.three, paddingBottom: 6, paddingLeft: Spacing.three,
   },
-  routeBackButton: { width: 38, alignItems: 'center', justifyContent: 'center', alignSelf: 'stretch' },
-  routeBackGlyph: { marginTop: -5, fontSize: 42, fontWeight: '300' },
-  routeLocations: { flex: 1, justifyContent: 'center', gap: Spacing.one, paddingRight: Spacing.two },
-  routeLocationRow: { height: 30, flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  locationDot: { width: 10, height: 10, borderRadius: 5 },
+  routeBackButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  routeLocations: { flex: 1, minHeight: 60, justifyContent: 'center', gap: 0, borderRadius: 14, paddingHorizontal: 12 },
+  routeSwapButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  routeSwapButtonPressed: { opacity: 0.7, transform: [{ scale: 0.94 }] },
+  routeLocationRow: { height: 27, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  locationDot: { width: 9, height: 9, borderRadius: 4.5 },
   startDot: { backgroundColor: '#20C77A' },
   endDot: { backgroundColor: '#F04B4B' },
-  routeLocationDivider: { width: StyleSheet.hairlineWidth, height: 8, marginLeft: 4.5, backgroundColor: '#B7BEC9' },
+  routeLocationDivider: { width: StyleSheet.hairlineWidth, height: 5, marginLeft: 4, backgroundColor: '#B7BEC9' },
   routeLocationText: { flex: 1, fontSize: 16, fontWeight: '600' },
   routeModeTabs: {
-    position: 'absolute', top: Platform.select({ ios: 140, default: 108 }), right: 0, left: 0, height: 54,
-    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', paddingHorizontal: Spacing.two,
+    position: 'absolute', top: 0, right: 0, left: 0, height: 50,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', gap: 4, paddingHorizontal: Spacing.two,
     borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D8DCE3',
   },
-  routeModeTab: { minWidth: 62, height: 40, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12, paddingHorizontal: Spacing.one },
+  routeModeTab: { flex: 1, minWidth: 0, height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12 },
   routeModeTabSelected: { backgroundColor: '#EAF2FF' },
   routeModeTabDisabled: { opacity: 0.5 },
-  routeModeGlyph: { fontSize: 15, fontWeight: '700' },
-  routeModeText: { fontSize: 15, fontWeight: '700' },
+  routeModeText: { fontSize: 14, fontWeight: '800' },
   locateButton: {
-    position: 'absolute', right: Spacing.three, bottom: BottomNavigationHeight + BottomNavigationGap + 226, width: 46, height: 46,
-    alignItems: 'center', justifyContent: 'center', borderRadius: 14,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.13, shadowRadius: 8, elevation: 4,
+    position: 'absolute', right: Spacing.three, bottom: 282, width: 48, height: 48,
+    alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: ROUTE_BLUE,
+    shadowColor: '#1265D2', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.26, shadowRadius: 10, elevation: 6,
   },
-  locateGlyph: { fontSize: 30, lineHeight: 34 },
+  locateButtonPressed: { opacity: 0.82, transform: [{ scale: 0.96 }] },
   routeSheet: {
-    position: 'absolute', right: 0, bottom: BottomNavigationHeight + BottomNavigationGap, left: 0, minHeight: 190, paddingTop: Spacing.two,
-    borderTopLeftRadius: 22, borderTopRightRadius: 22, shadowColor: '#000', shadowOffset: { width: 0, height: -2 }, shadowOpacity: 0.13, shadowRadius: 12, elevation: 8,
+    position: 'absolute', right: 0, bottom: 0, left: 0,
+    shadowColor: '#0D1B30', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.16, shadowRadius: 18, elevation: 12,
   },
-  routeLoading: { minHeight: 190, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
+  routeSheetSurface: { minHeight: 276, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
+  routeSheetHandle: { alignSelf: 'center', width: 34, height: 4, marginTop: 8, marginBottom: 5, borderRadius: 4, backgroundColor: '#D7DEE9' },
+  routeSheetHeader: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingHorizontal: Spacing.three, paddingBottom: 4 },
+  routeEndpoints: { flex: 1, minWidth: 0 },
+  routeEndpointRow: { minHeight: 31, flexDirection: 'row', alignItems: 'center', gap: 9 },
+  routeEndpointDot: { width: 10, height: 10, borderRadius: 5 },
+  routeEndpointStartDot: { backgroundColor: '#24BE79' },
+  routeEndpointEndDot: { backgroundColor: '#F15B5B' },
+  routeEndpointConnector: { width: 1, height: 8, marginLeft: 4.5, backgroundColor: '#C7CFDB' },
+  routeEndpointCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 7 },
+  routeEndpointLabel: { width: 38, fontSize: 11, fontWeight: '700' },
+  routeEndpointName: { flex: 1, fontSize: 15, fontWeight: '700' },
+  routeArrivalBadge: { minWidth: 72, alignItems: 'center', borderRadius: 14, backgroundColor: '#EAF3FF', paddingHorizontal: Spacing.two, paddingVertical: 6 },
+  routeArrivalLabel: { color: '#5275A9', fontSize: 11, fontWeight: '700' },
+  routeArrivalTime: { marginTop: 2, color: ROUTE_BLUE, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  routeLoading: { minHeight: 276, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
   routeLoadingText: { fontSize: 14 },
-  routeCardScroll: { flexGrow: 0 },
-  routeCardList: { gap: Spacing.two, paddingHorizontal: Spacing.three },
-  routeCard: { width: 130, minHeight: 102, justifyContent: 'center', borderWidth: 2, borderRadius: 14, paddingHorizontal: Spacing.two },
-  routeCardDuration: { fontSize: 22, fontWeight: '800' },
-  routeCardDistance: { marginTop: 3, fontSize: 14 },
-  routeCardLabel: { marginTop: Spacing.one, fontSize: 13, fontWeight: '600' },
-  routeActionBar: { minHeight: 66, flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  routeDetailAction: { width: 78, alignItems: 'center', justifyContent: 'center' },
-  routeDetailActionGlyph: { fontSize: 21, lineHeight: 23 },
-  routeDetailActionText: { marginTop: 1, fontSize: 12 },
-  startNavigationButton: { flex: 1, minHeight: 50, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: ROUTE_BLUE },
-  startNavigationText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800' },
-  routeStatus: { minHeight: 190, paddingHorizontal: Spacing.four, textAlign: 'center', textAlignVertical: 'center', fontSize: 15 },
+  routeCardList: { width: '100%', flexDirection: 'row', gap: 8, paddingHorizontal: Spacing.three },
+  routeCard: { flex: 1, minWidth: 0, minHeight: 90, justifyContent: 'center', borderWidth: 1.5, borderRadius: 15, padding: 9 },
+  routeCardPressed: { opacity: 0.88, transform: [{ scale: 0.985 }] },
+  routeCardTopLine: { alignItems: 'flex-start' },
+  routeCardDuration: { marginTop: 5, fontSize: 22, fontWeight: '800', letterSpacing: -0.5 },
+  routeCardBadge: { overflow: 'hidden', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3, fontSize: 11, fontWeight: '800' },
+  routeCardDistance: { marginTop: 3, fontSize: 11, fontWeight: '600' },
+  routeCardLabel: { marginTop: 3, fontSize: 11, fontWeight: '700' },
+  routeActionBar: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9EDF3', paddingHorizontal: Spacing.three, paddingTop: 8, paddingBottom: Spacing.two },
+  routeDetailAction: { width: 58, minHeight: 54, alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: 1, borderRadius: 16, backgroundColor: '#F7F9FC' },
+  routeDetailActionText: { fontSize: 11, fontWeight: '800' },
+  routeActionPressed: { opacity: 0.7, transform: [{ scale: 0.97 }] },
+  startNavigationButton: { flex: 1, minHeight: 54, flexDirection: 'row', alignItems: 'center', borderRadius: 16, backgroundColor: '#1976ED', paddingHorizontal: 9, shadowColor: '#1265D2', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 4 },
+  startNavigationButtonPressed: { opacity: 0.9, transform: [{ scale: 0.98 }] },
+  startNavigationIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 12, backgroundColor: '#FFFFFF26' },
+  startNavigationCopy: { flex: 1, minWidth: 0, paddingHorizontal: 11 },
+  startNavigationText: { color: '#FFFFFF', fontSize: 18, fontWeight: '800', letterSpacing: -0.2 },
+  startNavigationMeta: { marginTop: 2, color: '#D8E9FF', fontSize: 12, fontWeight: '700' },
+  startNavigationArrow: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#FFFFFF' },
+  routeStatus: { minHeight: 244, paddingHorizontal: Spacing.four, textAlign: 'center', textAlignVertical: 'center', fontSize: 15 },
   routeDetailsScreen: { flex: 1, paddingTop: Platform.select({ ios: 58, default: 24 }) },
   routeDetailsHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.three, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D1D5DC' },
   routeDetailsBack: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
@@ -910,21 +1187,24 @@ const styles = StyleSheet.create({
   navigationMap: { flex: 1 },
   navigationOverlay: { ...StyleSheet.absoluteFill },
   navigationHud: {
-    position: 'absolute', top: Platform.select({ ios: 54, default: 20 }), right: Spacing.three, left: Spacing.three, minHeight: 112,
-    flexDirection: 'row', alignItems: 'center', borderRadius: 22, backgroundColor: '#111B2E', paddingHorizontal: Spacing.three,
-    shadowColor: '#000', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.18, shadowRadius: 12, elevation: 8,
+    position: 'absolute', top: Platform.select({ ios: 54, default: 20 }), right: Spacing.three, left: Spacing.three, minHeight: 124,
+    flexDirection: 'row', alignItems: 'center', borderRadius: 24, backgroundColor: '#101B2E', padding: Spacing.two,
+    shadowColor: '#000', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.2, shadowRadius: 16, elevation: 10,
   },
-  navigationArrow: { width: 54, color: '#FFFFFF', fontSize: 66, fontWeight: '300', lineHeight: 76, textAlign: 'center' },
-  navigationInstruction: { flex: 1, paddingHorizontal: Spacing.two },
-  navigationTurnDistance: { color: '#FFFFFF', fontSize: 32, fontWeight: '800' },
-  navigationRoadName: { marginTop: 1, color: '#FFFFFF', fontSize: 18, fontWeight: '700' },
-  navigationCurrentRoad: { marginTop: 2, color: '#AEB8C9', fontSize: 13 },
-  navigationVoice: { color: '#FFFFFF', fontSize: 28 },
+  navigationTurnIcon: { width: 68, height: 68, alignItems: 'center', justifyContent: 'center', borderRadius: 18, backgroundColor: '#237CF4' },
+  navigationInstruction: { flex: 1, minWidth: 0, paddingHorizontal: Spacing.two },
+  navigationActionLabel: { color: '#D7E7FF', fontSize: 14, fontWeight: '700' },
+  navigationRoadName: { marginTop: 2, color: '#FFFFFF', fontSize: 23, fontWeight: '800', letterSpacing: -0.4 },
+  navigationCurrentRoad: { marginTop: 4, color: '#AAB7CB', fontSize: 13, fontWeight: '600' },
+  navigationHudStatus: { alignItems: 'flex-end', gap: 2, paddingRight: Spacing.one },
+  navigationHudStatusValue: { color: '#FFFFFF', fontSize: 13, fontWeight: '800' },
+  navigationHudStatusLabel: { color: '#90A1BA', fontSize: 11, fontWeight: '600' },
+  navigationSpeedometerShell: { position: 'absolute', top: Platform.select({ ios: 202, default: 170 }), left: Spacing.three, borderRadius: 38, shadowColor: '#111B2E', shadowOffset: { width: 0, height: 5 }, shadowOpacity: 0.16, shadowRadius: 10, elevation: 6 },
   navigationTrafficBar: {
     position: 'absolute',
-    top: Platform.select({ ios: 196, default: 158 }),
+    top: Platform.select({ ios: 202, default: 170 }),
     right: Spacing.three,
-    bottom: 138,
+    bottom: 154,
     width: 11,
     overflow: 'hidden',
     borderRadius: 6,
@@ -936,22 +1216,26 @@ const styles = StyleSheet.create({
     elevation: 4,
   },
   navigationTrafficSegment: { width: '100%' },
-  navigationLoading: { position: 'absolute', top: Platform.select({ ios: 182, default: 144 }), alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderRadius: 18, backgroundColor: '#111B2ECC', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  navigationLoading: { position: 'absolute', top: Platform.select({ ios: 196, default: 160 }), alignSelf: 'center', flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderRadius: 18, backgroundColor: '#101B2ED9', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   navigationLoadingText: { color: '#FFFFFF', fontSize: 13, fontWeight: '600' },
   navigationBottomBar: {
-    position: 'absolute', right: 0, bottom: 0, left: 0, minHeight: 112, flexDirection: 'row', alignItems: 'center',
-    borderTopLeftRadius: 24, borderTopRightRadius: 24, backgroundColor: '#FFFFFF', paddingHorizontal: Spacing.three,
-    paddingBottom: Platform.select({ ios: 18, default: Spacing.three }), shadowColor: '#000', shadowOffset: { width: 0, height: -3 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 10,
+    position: 'absolute', right: 0, bottom: 0, left: 0, minHeight: 132, flexDirection: 'row', alignItems: 'center',
+    borderTopLeftRadius: 28, borderTopRightRadius: 28, backgroundColor: '#FFFFFF', paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two, paddingBottom: Platform.select({ ios: 22, default: Spacing.three }), shadowColor: '#0C1729', shadowOffset: { width: 0, height: -5 }, shadowOpacity: 0.16, shadowRadius: 16, elevation: 12,
   },
-  navigationExit: { width: 52, alignItems: 'center' },
-  navigationExitGlyph: { color: '#101010', fontSize: 42, fontWeight: '300', lineHeight: 42 },
-  navigationExitText: { marginTop: 2, color: '#101010', fontSize: 13 },
-  navigationSummary: { flex: 1, alignItems: 'center' },
-  navigationSummaryMain: { color: '#101010', fontSize: 21, fontWeight: '800' },
-  navigationSummaryArrival: { marginTop: 3, color: '#555B66', fontSize: 15 },
-  navigationOverviewButton: { width: 52, alignItems: 'center' },
-  navigationOverviewGlyph: { color: '#101010', fontSize: 28, fontWeight: '700', lineHeight: 32 },
-  navigationOverviewText: { marginTop: 2, color: '#101010', fontSize: 13 },
+  navigationExit: { width: 58, alignItems: 'center', gap: 4 },
+  navigationControlIcon: { width: 38, height: 38, alignItems: 'center', justifyContent: 'center', borderRadius: 19, backgroundColor: '#EFF3F8' },
+  navigationExitText: { color: '#152033', fontSize: 12, fontWeight: '700' },
+  navigationControlPressed: { opacity: 0.68, transform: [{ scale: 0.96 }] },
+  navigationSummary: { flex: 1, alignItems: 'center', paddingHorizontal: Spacing.one },
+  navigationDestination: { maxWidth: 190, color: '#667085', fontSize: 12, fontWeight: '700' },
+  navigationSummaryStats: { flexDirection: 'row', alignItems: 'baseline', gap: 7, marginTop: 1 },
+  navigationSummaryMain: { color: '#101828', fontSize: 28, fontWeight: '800', letterSpacing: -0.7 },
+  navigationSummaryDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: '#AAB4C2' },
+  navigationSummaryDistance: { color: '#344054', fontSize: 16, fontWeight: '700' },
+  navigationSummaryArrival: { marginTop: 2, color: '#667085', fontSize: 13, fontWeight: '600' },
+  navigationOverviewButton: { width: 58, alignItems: 'center', gap: 4 },
+  navigationOverviewText: { color: '#152033', fontSize: 12, fontWeight: '700' },
   searchMask: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 10, elevation: 12, paddingTop: Platform.select({ ios: 64, default: 24 }) },
   searchHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingHorizontal: Spacing.three },
   searchInputWrap: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', borderRadius: 10, paddingRight: Spacing.three },
