@@ -1,0 +1,82 @@
+diff --git a/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm b/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
+index 481a9e6..7c0e4fb 100644
+--- a/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
++++ b/node_modules/react-native-screens/ios/tabs/host/RNSTabBarController.mm
+@@ -89,6 +89,8 @@ @implementation RNSTabBarController {
+   RNSTabsNavigationStateObserverRegistry *_observerRegistry;
+ 
+   RNSParentContainerItemRegistry *_Nonnull _parentContainerRegistry;
++  BOOL _tabBarHiddenByCustomTransition;
++  NSUInteger _tabBarVisibilityAnimationToken;
+ }
+ 
+ - (instancetype)init
+@@ -102,6 +104,8 @@ - (instancetype)init
+     _shouldProgressStateOnMoreNavigationControllerPush = NO;
+     _observerRegistry = [RNSTabsNavigationStateObserverRegistry new];
+     _parentContainerRegistry = [RNSParentContainerItemRegistry new];
++    _tabBarHiddenByCustomTransition = NO;
++    _tabBarVisibilityAnimationToken = 0;
+ 
+     // Delegate field retains weakly, no risk of cycle.
+     self.delegate = self;
+@@ -109,6 +113,46 @@ - (instancetype)init
+   return self;
+ }
+ 
++#pragma mark - Tab bar visibility
++
++- (void)setTabBarHidden:(BOOL)hidden animated:(BOOL)animated
++{
++  if (!animated) {
++    [super setTabBarHidden:hidden animated:NO];
++    self.tabBar.transform = CGAffineTransformIdentity;
++    _tabBarHiddenByCustomTransition = hidden;
++    return;
++  }
++
++  const NSUInteger animationToken = ++_tabBarVisibilityAnimationToken;
++  const CGFloat hiddenOffset = CGRectGetHeight(self.tabBar.bounds) + self.view.safeAreaInsets.bottom;
++  const NSTimeInterval duration = hidden ? 0.32 : 0.36;
++  const UIViewAnimationOptions options = UIViewAnimationOptionBeginFromCurrentState | UIViewAnimationOptionCurveEaseInOut;
++
++  if (!hidden && _tabBarHiddenByCustomTransition) {
++    [super setTabBarHidden:NO animated:NO];
++    self.tabBar.transform = CGAffineTransformMakeTranslation(0, hiddenOffset);
++    _tabBarHiddenByCustomTransition = NO;
++  }
++
++  [UIView animateWithDuration:duration
++                        delay:0
++                      options:options
++                   animations:^{
++                     self.tabBar.transform = hidden ? CGAffineTransformMakeTranslation(0, hiddenOffset)
++                                                        : CGAffineTransformIdentity;
++                   }
++                   completion:^(BOOL finished) {
++                     if (!hidden || !finished || animationToken != self->_tabBarVisibilityAnimationToken) {
++                       return;
++                     }
++
++                     [super setTabBarHidden:YES animated:NO];
++                     self.tabBar.transform = CGAffineTransformIdentity;
++                     self->_tabBarHiddenByCustomTransition = YES;
++                   }];
++}
++
+ #pragma mark - Public API
+ 
+ - (void)submitSelectionOfTabsScreenWithKey:(nonnull NSString *)screenKey
+diff --git a/node_modules/react-native-screens/ios/tabs/host/RNSTabsHostComponentView.mm b/node_modules/react-native-screens/ios/tabs/host/RNSTabsHostComponentView.mm
+index 8b61f5b..802807d 100644
+--- a/node_modules/react-native-screens/ios/tabs/host/RNSTabsHostComponentView.mm
++++ b/node_modules/react-native-screens/ios/tabs/host/RNSTabsHostComponentView.mm
+@@ -244,7 +244,7 @@ - (void)updateProps:(const facebook::react::Props::Shared &)props
+     _tabBarHidden = newComponentProps.tabBarHidden;
+ #if RNS_IPHONE_OS_VERSION_AVAILABLE(18_0)
+     if (@available(iOS 18.0, *)) {
+-      [_controller setTabBarHidden:_tabBarHidden animated:NO];
++      [_controller setTabBarHidden:_tabBarHidden animated:YES];
+     } else
+ #endif // RNS_IPHONE_OS_VERSION_AVAILABLE(18_0)
+     {

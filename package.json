@@ -4,12 +4,14 @@
   "version": "1.0.0",
   "dependencies": {
     "@expo/ui": "~57.0.17",
+    "@react-native-async-storage/async-storage": "2.2.0",
     "expo": "~57.0.21",
     "expo-audio": "~57.0.4",
     "expo-constants": "~57.0.17",
+    "expo-dev-client": "^57.0.19",
     "expo-device": "~57.0.1",
     "expo-font": "~57.0.3",
-    "expo-gaode-map": "^2.3.0",
+    "expo-gaode-map-navigation": "^2.0.24",
     "expo-glass-effect": "~57.0.2",
     "expo-haptics": "~57.0.2",
     "expo-image": "~57.0.4",
@@ -36,15 +38,19 @@
     "@types/react": "~19.2.2",
     "eslint": "^9.0.0",
     "eslint-config-expo": "~57.0.2",
+    "patch-package": "^8.0.1",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
+    "android:device": "expo run:android --device",
     "ios": "expo run:ios",
+    "ios:device": "expo run:ios --device",
     "web": "expo start --web",
-    "lint": "expo lint"
+    "lint": "expo lint",
+    "postinstall": "patch-package"
   },
   "private": true
 }

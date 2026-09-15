@@ -48,11 +48,12 @@
         }
       ],
       [
-        "expo-gaode-map",
+        "expo-gaode-map-navigation",
         {
           "androidKey": "your-android-key",
           "iosKey": "e64c7d8eccee23ff895be20ac480c916",
           "enableLocation": true,
+          "enableBackgroundLocation": true,
           "locationDescription": "允许 LumiMate 使用当前位置，用于展示地图和位置服务。"
         }
       ],
