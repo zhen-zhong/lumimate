@@ -62,6 +62,7 @@ const MAX_ROUTE_POLYLINE_POINTS = 600;
 const MAP_CONTROLS_HIDDEN_TRANSLATE_Y = -220;
 const MAP_CONTROLS_HIDE_DURATION_MS = 240;
 const MAP_CONTROLS_SHOW_DURATION_MS = 280;
+const ROUTE_SHEET_BASE_HEIGHT = 276;
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 type SearchLocation = Pick<POI, 'id' | 'name' | 'address' | 'location'>;
@@ -126,6 +127,37 @@ function getRouteOptions(result: IndependentRouteResult) {
     ...route,
     polyline: sanitizePolyline(route.polyline),
   })) as RoutePreview[];
+}
+
+function getRouteDetailSteps(route: RoutePreview): RouteStep[] {
+  const nativeSteps = (route.segments ?? []).filter(
+    (step): step is RouteStep =>
+      Boolean(
+        step &&
+          Number.isFinite(step.distance) &&
+          Number.isFinite(step.duration) &&
+          step.distance >= 0 &&
+          step.duration >= 0
+      )
+  );
+  if (nativeSteps.length) return nativeSteps;
+
+  const points = sanitizePolyline(route.polyline);
+  if (points.length < 2) return [];
+
+  const stepCount = Math.min(3, Math.max(1, Math.ceil(points.length / 200)));
+  return Array.from({ length: stepCount }, (_, index) => {
+    const startIndex = Math.floor(((points.length - 1) * index) / stepCount);
+    const endIndex = Math.max(startIndex + 1, Math.floor(((points.length - 1) * (index + 1)) / stepCount));
+    const isLastStep = index === stepCount - 1;
+
+    return {
+      instruction: isLastStep ? '到达目的地' : index === 0 ? '沿规划路线出发' : '继续沿规划路线前行',
+      distance: Math.round(route.distance / stepCount),
+      duration: Math.round(route.duration / stepCount),
+      polyline: points.slice(startIndex, endIndex + 1),
+    };
+  });
 }
 
 function getMainRouteIndex(result: IndependentRouteResult) {
@@ -257,6 +289,7 @@ export function GaodeMemoryMap() {
   const reducedMotion = useReducedMotion();
   const mapControlsProgress = useSharedValue(1);
   const routePreview = routeOptions[selectedRouteIndex] ?? null;
+  const routeDetailSteps = routePreview ? getRouteDetailSteps(routePreview) : [];
 
   const moveMapCamera = useCallback(async (target: SearchLocation['location'], zoom: number, duration: number) => {
     const map = mapRef.current;
@@ -726,6 +759,7 @@ export function GaodeMemoryMap() {
           onPress={() => void moveMapCamera(userLocation || routeStart || LUMIMATE_COORDINATE, 16, 300)}
           style={({ pressed }) => [
             styles.locateButton,
+            { bottom: ROUTE_SHEET_BASE_HEIGHT + safeAreaInsets.bottom + Spacing.two },
             pressed && styles.locateButtonPressed,
           ]}>
           <SymbolView
@@ -806,7 +840,7 @@ export function GaodeMemoryMap() {
                   );
                 })}
               </View>
-              <View style={styles.routeActionBar}>
+              <View style={[styles.routeActionBar, { paddingBottom: safeAreaInsets.bottom + Spacing.one }]}>
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => setRouteDetailsOpen(true)}
@@ -864,13 +898,15 @@ export function GaodeMemoryMap() {
               {routePreview ? <Text style={[styles.routeSummary, { color: theme.textSecondary }]}>{formatDuration(routePreview.duration)} · {formatDistance(routePreview.distance)}</Text> : null}
             </View>
           </View>
-          <ScrollView contentContainerStyle={styles.routeSteps}>
-            {routePreview?.segments?.length ? (
-              routePreview.segments.map((step, index) => (
+          <ScrollView
+            style={styles.routeDetailsScroll}
+            contentContainerStyle={[styles.routeSteps, !routeDetailSteps.length && styles.routeStepsEmpty]}>
+            {routeDetailSteps.length ? (
+              routeDetailSteps.map((step, index) => (
                 <View key={`${step.instruction}-${index}`} style={styles.routeStep}>
                   <View style={styles.routeStepRail}>
                     <Text style={styles.routeStepIndex}>{index + 1}</Text>
-                    {index < routePreview.segments!.length - 1 ? <View style={styles.routeStepLine} /> : null}
+                    {index < routeDetailSteps.length - 1 ? <View style={styles.routeStepLine} /> : null}
                   </View>
                   <View style={styles.routeStepContent}>
                     <Text style={[styles.routeStepTitle, { color: theme.text }]}>{getRouteStepTitle(step)}</Text>
@@ -1131,7 +1167,7 @@ const styles = StyleSheet.create({
     position: 'absolute', right: 0, bottom: 0, left: 0,
     shadowColor: '#0D1B30', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.16, shadowRadius: 18, elevation: 12,
   },
-  routeSheetSurface: { minHeight: 276, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
+  routeSheetSurface: { minHeight: ROUTE_SHEET_BASE_HEIGHT, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
   routeSheetHandle: { alignSelf: 'center', width: 34, height: 4, marginTop: 8, marginBottom: 5, borderRadius: 4, backgroundColor: '#D7DEE9' },
   routeSheetHeader: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingHorizontal: Spacing.three, paddingBottom: 4 },
   routeEndpoints: { flex: 1, minWidth: 0 },
@@ -1175,7 +1211,9 @@ const styles = StyleSheet.create({
   routeDetailsHeading: { flex: 1, marginLeft: Spacing.one },
   routeDetailsTitle: { fontSize: 20, fontWeight: '800' },
   routeSummary: { marginTop: 2, fontSize: 13 },
-  routeSteps: { paddingVertical: Spacing.two, paddingBottom: Spacing.five },
+  routeDetailsScroll: { flex: 1 },
+  routeSteps: { flexGrow: 1, paddingVertical: Spacing.two, paddingBottom: Spacing.five },
+  routeStepsEmpty: { alignItems: 'center', justifyContent: 'center', paddingHorizontal: Spacing.four },
   routeStep: { flexDirection: 'row', paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   routeStepRail: { width: 32, alignItems: 'center' },
   routeStepIndex: { width: 24, height: 24, overflow: 'hidden', borderRadius: 12, backgroundColor: ROUTE_BLUE, color: '#FFFFFF', fontSize: 13, fontWeight: '700', lineHeight: 24, textAlign: 'center' },

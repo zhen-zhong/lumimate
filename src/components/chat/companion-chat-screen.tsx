@@ -44,8 +44,9 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { streamChatMessage } from '@/services/chat-api';
 
-const STREAMING_THROTTLE_MS = 32;
+const STREAMING_CHARACTER_INTERVAL_MS = 18;
 const CHAT_PANEL_HEIGHT = 236;
 const KEYBOARD_UNDERLAY = Platform.OS === 'ios' ? 10 : 0;
 const KEYBOARD_TRANSITION_MS = 220;
@@ -53,27 +54,8 @@ const PANEL_TRANSITION_MS = 180;
 const MAP_TILE_ZOOM = 16;
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
-const MOCK_RESPONSES = [
-  '我在。先不急着解决所有事。你可以把今天最占心的一件事丢给我，我们慢慢拆。',
-  '听起来你不是缺答案，是脑子里开了太多窗口。先选一个最小动作：喝水、站起来、或把问题写成一句话。',
-  '记住了。等长期记忆接上后，这类偏好会留在本地，只在你允许时进入上下文。',
-  '可以。我们把它当成一个小实验：先做能验证方向的版本，再决定要不要加重功能。',
-];
-
 function createMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-async function streamMockResponse(
-  text: string,
-  onToken: (token: string) => void,
-  signal?: AbortSignal,
-) {
-  for (const chunk of Array.from(text)) {
-    if (signal?.aborted) return;
-    await new Promise((resolve) => setTimeout(resolve, 20 + Math.random() * 34));
-    onToken(chunk);
-  }
 }
 
 type PanelMode = 'idle' | 'keyboard' | 'voice' | 'emoji' | 'actions';
@@ -151,11 +133,16 @@ function createLocationCandidates(
 }
 
 type CompanionChatScreenProps = {
+  conversationId?: string;
   title?: string;
   subtitle?: string;
 };
 
-export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪伴' }: CompanionChatScreenProps) {
+export function CompanionChatScreen({
+  conversationId = 'lumimate',
+  title = 'LumiMate',
+  subtitle = '长期陪伴',
+}: CompanionChatScreenProps) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const recorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
@@ -163,9 +150,10 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
   const listRef = useRef<FlatList<ChatMessage>>(null);
   const streamingStore = useMemo(() => createStreamingStore(), []);
   const streamingRef = useRef('');
-  const throttleRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const abortRef = useRef<AbortController | null>(null);
-  const responseIndexRef = useRef(0);
+  const visibleStreamingRef = useRef('');
+  const typingQueueRef = useRef<string[]>([]);
+  const typingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const typingDrainResolversRef = useRef<(() => void)[]>([]);
   const recordingStartedAtRef = useRef<number | null>(null);
   const recordingActiveRef = useRef(false);
   const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
@@ -188,7 +176,7 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
     {
       id: createMessageId(),
       role: 'assistant',
-      content: `嗨，我是 ${title}。现在是本地 mock 聊天，已经支持文本、图片、拍摄和语音录入。`,
+      content: `嗨，我是 ${title}。现在已接入 AI 文字聊天；图片、语音、文件和位置工具会逐步接入。`,
     },
   ]);
   const panelOpen = mode === 'emoji' || mode === 'actions';
@@ -251,6 +239,42 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
     [scheduleScrollToBottom],
   );
 
+  const resolveTypingDrain = useCallback(() => {
+    const resolvers = typingDrainResolversRef.current;
+    typingDrainResolversRef.current = [];
+    resolvers.forEach((resolve) => resolve());
+  }, []);
+
+  const startTyping = useCallback(() => {
+    if (typingTimerRef.current) return;
+
+    const typeNextCharacter = () => {
+      const character = typingQueueRef.current.shift();
+      if (!character) {
+        typingTimerRef.current = null;
+        resolveTypingDrain();
+        return;
+      }
+
+      visibleStreamingRef.current += character;
+      streamingStore.set(visibleStreamingRef.current);
+      scrollToBottom(false);
+      typingTimerRef.current = setTimeout(typeNextCharacter, STREAMING_CHARACTER_INTERVAL_MS);
+    };
+
+    typeNextCharacter();
+  }, [resolveTypingDrain, scrollToBottom, streamingStore]);
+
+  const waitForTypingDrain = useCallback(() => {
+    if (!typingTimerRef.current && typingQueueRef.current.length === 0) {
+      return Promise.resolve();
+    }
+
+    return new Promise<void>((resolve) => {
+      typingDrainResolversRef.current.push(resolve);
+    });
+  }, []);
+
   const appendUserTurn = useCallback(
     async ({
       content,
@@ -289,49 +313,53 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
       setIsGenerating(true);
       scheduleScrollToBottom();
       streamingRef.current = '';
+      visibleStreamingRef.current = '';
+      typingQueueRef.current = [];
       streamingStore.set('');
 
-      const controller = new AbortController();
-      abortRef.current = controller;
-      const response = MOCK_RESPONSES[responseIndexRef.current % MOCK_RESPONSES.length];
-      responseIndexRef.current += 1;
-
       try {
-        await streamMockResponse(
-          response,
-          (token) => {
-            streamingRef.current += token;
-            if (!throttleRef.current) {
-              throttleRef.current = setTimeout(() => {
-                streamingStore.set(streamingRef.current);
-                throttleRef.current = null;
-                scrollToBottom(false);
-              }, STREAMING_THROTTLE_MS);
-            }
+        await streamChatMessage({
+          conversationId,
+          content,
+          onDelta: (delta) => {
+            streamingRef.current += delta;
+            typingQueueRef.current.push(...Array.from(delta));
+            startTyping();
           },
-          controller.signal,
-        );
-      } finally {
-        if (throttleRef.current) {
-          clearTimeout(throttleRef.current);
-          throttleRef.current = null;
+        });
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : '聊天服务暂时不可用';
+        streamingRef.current = streamingRef.current || `抱歉，${errorMessage}`;
+        if (!visibleStreamingRef.current) {
+          typingQueueRef.current.push(...Array.from(streamingRef.current));
+          startTyping();
         }
+      } finally {
+        await waitForTypingDrain();
 
-        const finalContent = streamingRef.current || response;
+        const finalContent = streamingRef.current || '抱歉，聊天服务未返回内容，请重试。';
         setMessages((current) =>
           current.map((message) =>
             message.id === assistantMessage.id ? { ...message, content: finalContent } : message,
           ),
         );
         streamingRef.current = '';
+        visibleStreamingRef.current = '';
+        typingQueueRef.current = [];
         streamingStore.set('');
-        abortRef.current = null;
         setIsGenerating(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         scheduleScrollToBottom();
       }
     },
-    [isGenerating, scheduleScrollToBottom, scrollToBottom, streamingStore],
+    [
+      conversationId,
+      isGenerating,
+      scheduleScrollToBottom,
+      startTyping,
+      streamingStore,
+      waitForTypingDrain,
+    ],
   );
 
   const openImagePreview = useCallback((asset: ImagePicker.ImagePickerAsset | undefined, label: string) => {
@@ -542,11 +570,11 @@ export function CompanionChatScreen({ title = 'LumiMate', subtitle = '长期陪�
 
   useEffect(() => {
     return () => {
-      abortRef.current?.abort();
-      if (throttleRef.current) clearTimeout(throttleRef.current);
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      resolveTypingDrain();
       clearScrollTimers();
     };
-  }, [clearScrollTimers]);
+  }, [clearScrollTimers, resolveTypingDrain]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return undefined;
