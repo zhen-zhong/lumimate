@@ -57,11 +57,8 @@ export function ChatMessageBubble({
             ) : null}
           </ThemedText>
         ) : streaming ? (
-          <ThemedText selectable style={styles.messageText}>
-            ...
-            <ThemedText style={styles.cursor} themeColor="textSecondary">
-              |
-            </ThemedText>
+          <ThemedText selectable style={styles.messageText} themeColor="textSecondary">
+            思考中…
           </ThemedText>
         ) : null}
         {audioOnly ? (

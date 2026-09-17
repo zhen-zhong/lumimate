@@ -1,13 +1,19 @@
-import { fetch } from 'expo/fetch';
+import { apiFetch, apiJson, assertApiResponse } from '@/services/http';
 
 type SseEvent = {
   type: string;
   data: Record<string, unknown>;
 };
 
+export type ChatImageAttachment = {
+  url: string;
+  mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+};
+
 export type StreamChatMessageOptions = {
   conversationId: string;
   content: string;
+  attachments?: ChatImageAttachment[];
   onDelta: (delta: string) => void;
 };
 
@@ -23,14 +29,6 @@ export type UpdateChatAgentSettings = Pick<
   ChatAgentSettings,
   'agentName' | 'agentProfile' | 'responseStyle' | 'contextMessageLimit'
 >;
-
-function getApiBaseUrl() {
-  const value = process.env.EXPO_PUBLIC_API_URL?.trim().replace(/\/$/, '');
-  if (!value) {
-    throw new Error('未配置 EXPO_PUBLIC_API_URL');
-  }
-  return value;
-}
 
 function parseSseEvent(frame: string): SseEvent | null {
   let type = 'message';
@@ -58,52 +56,43 @@ function getErrorMessage(data: Record<string, unknown>) {
     : 'AI 服务暂时不可用';
 }
 
-async function readJson<T>(response: Response): Promise<T> {
-  if (!response.ok) {
-    throw new Error(`聊天服务请求失败（HTTP ${response.status}）`);
-  }
-  return response.json() as Promise<T>;
-}
-
 export async function getChatAgentSettings(conversationId: string) {
-  const response = await fetch(
-    `${getApiBaseUrl()}/v1/chats/${encodeURIComponent(conversationId)}/settings`,
+  return apiJson<ChatAgentSettings>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/settings`,
   );
-  return readJson<ChatAgentSettings>(response);
 }
 
 export async function updateChatAgentSettings(
   conversationId: string,
   settings: UpdateChatAgentSettings,
 ) {
-  const response = await fetch(
-    `${getApiBaseUrl()}/v1/chats/${encodeURIComponent(conversationId)}/settings`,
+  return apiJson<ChatAgentSettings>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/settings`,
     {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
     },
   );
-  return readJson<ChatAgentSettings>(response);
 }
 
 export async function streamChatMessage({
   conversationId,
   content,
+  attachments,
   onDelta,
 }: StreamChatMessageOptions) {
-  const response = await fetch(`${getApiBaseUrl()}/v1/chats/${encodeURIComponent(conversationId)}/messages`, {
+  const response = await apiFetch(`/v1/chats/${encodeURIComponent(conversationId)}/messages`, {
     method: 'POST',
+    timeoutMs: 0,
     headers: {
       Accept: 'text/event-stream',
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({ content, ...(attachments?.length ? { attachments } : {}) }),
   });
 
-  if (!response.ok) {
-    throw new Error(`聊天服务请求失败（HTTP ${response.status}）`);
-  }
+  await assertApiResponse(response);
   if (!response.body) {
     throw new Error('聊天服务未返回流式响应');
   }

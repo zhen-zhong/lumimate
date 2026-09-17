@@ -44,7 +44,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { streamChatMessage } from '@/services/chat-api';
+import { streamChatMessage, type ChatImageAttachment } from '@/services/chat-api';
+import { getApiErrorMessage } from '@/services/http';
 
 const STREAMING_CHARACTER_INTERVAL_MS = 18;
 const CHAT_PANEL_HEIGHT = 236;
@@ -52,6 +53,7 @@ const KEYBOARD_UNDERLAY = Platform.OS === 'ios' ? 10 : 0;
 const KEYBOARD_TRANSITION_MS = 220;
 const PANEL_TRANSITION_MS = 180;
 const MAP_TILE_ZOOM = 16;
+const MAX_IMAGE_DATA_URL_LENGTH = 15 * 1024 * 1024;
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
 function createMessageId() {
@@ -62,6 +64,7 @@ type PanelMode = 'idle' | 'keyboard' | 'voice' | 'emoji' | 'actions';
 type PendingImage = {
   uri: string;
   label: string;
+  base64?: string | null;
 };
 type LocationCandidate = {
   id: string;
@@ -279,12 +282,14 @@ export function CompanionChatScreen({
     async ({
       content,
       imageUri,
+      attachments,
       audioUri,
       audioDuration,
       modeAfterSend,
     }: {
       content: string;
       imageUri?: string;
+      attachments?: ChatImageAttachment[];
       audioUri?: string;
       audioDuration?: number;
       modeAfterSend?: PanelMode;
@@ -321,6 +326,7 @@ export function CompanionChatScreen({
         await streamChatMessage({
           conversationId,
           content,
+          attachments,
           onDelta: (delta) => {
             streamingRef.current += delta;
             typingQueueRef.current.push(...Array.from(delta));
@@ -328,7 +334,7 @@ export function CompanionChatScreen({
           },
         });
       } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : '聊天服务暂时不可用';
+        const errorMessage = getApiErrorMessage(error, '聊天服务暂时不可用');
         streamingRef.current = streamingRef.current || `抱歉，${errorMessage}`;
         if (!visibleStreamingRef.current) {
           typingQueueRef.current.push(...Array.from(streamingRef.current));
@@ -368,7 +374,7 @@ export function CompanionChatScreen({
     Keyboard.dismiss();
     setKeyboardHeight(0);
     setMode('actions');
-    setPendingImage({ uri: asset.uri, label });
+    setPendingImage({ uri: asset.uri, label, base64: asset.base64 });
     setPendingImageSelected(true);
   }, []);
 
@@ -376,11 +382,22 @@ export function CompanionChatScreen({
     if (!pendingImage || !pendingImageSelected) return;
 
     const imageToSend = pendingImage;
+    const imageDataUrl = imageToSend.base64 ? `data:image/jpeg;base64,${imageToSend.base64}` : null;
+    if (!imageDataUrl) {
+      Alert.alert('图片读取失败', '未能读取图片数据，请重新选择后发送。');
+      return;
+    }
+    if (imageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
+      Alert.alert('图片过大', '请选择小于 11 MiB 的图片后发送。');
+      return;
+    }
+
     setPendingImage(null);
     setPendingImageSelected(true);
     await appendUserTurn({
       content: imageToSend.label,
       imageUri: imageToSend.uri,
+      attachments: [{ url: imageDataUrl, mimeType: 'image/jpeg' }],
       modeAfterSend: 'actions',
     });
   }, [appendUserTurn, pendingImage, pendingImageSelected]);
@@ -400,7 +417,8 @@ export function CompanionChatScreen({
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      quality: 0.9,
+      base64: true,
+      quality: 0.7,
       allowsEditing: false,
     });
 
@@ -418,7 +436,8 @@ export function CompanionChatScreen({
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
-      quality: 0.9,
+      base64: true,
+      quality: 0.7,
       allowsEditing: false,
     });
 

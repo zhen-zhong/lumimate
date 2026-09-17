@@ -19,6 +19,7 @@ import {
   type ChatAgentSettings,
   updateChatAgentSettings,
 } from '@/services/chat-api';
+import { getApiErrorMessage } from '@/services/http';
 import { useTheme } from '@/hooks/use-theme';
 
 const FALLBACK_SETTINGS: ChatAgentSettings = {
@@ -61,8 +62,7 @@ export default function AgentSettingsScreen() {
       })
       .catch((error: unknown) => {
         if (!active) return;
-        const message = error instanceof Error ? error.message : '读取设置失败';
-        Alert.alert('无法读取智能体设置', message);
+        Alert.alert('无法读取智能体设置', getApiErrorMessage(error, '读取设置失败'));
       })
       .finally(() => {
         if (active) setLoading(false);
@@ -92,8 +92,7 @@ export default function AgentSettingsScreen() {
       setContextLimit(String(next.contextMessageLimit));
       Alert.alert('已保存', '下一条消息起使用新的智能体设定。');
     } catch (error) {
-      const message = error instanceof Error ? error.message : '保存设置失败';
-      Alert.alert('无法保存智能体设置', message);
+      Alert.alert('无法保存智能体设置', getApiErrorMessage(error, '保存设置失败'));
     } finally {
       setSaving(false);
     }
