@@ -1,4 +1,5 @@
 import { fetch } from 'expo/fetch';
+import { Platform } from 'react-native';
 
 const DEFAULT_TIMEOUT_MS = 15_000;
 
@@ -64,7 +65,9 @@ function getErrorMessage(data: unknown, fallback: string) {
 
 export async function apiFetch(path: string, options: ApiRequestOptions = {}) {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, signal, headers, ...init } = options;
-  if (timeoutMs <= 0) {
+  // iOS 原生 `expo/fetch` 在 AbortController 超时时会抛出 ExpoModulesCore Promise timeout，
+  // 无法区分网络慢与主动取消。原生请求交给系统网络栈；Web 仍保留超时保护。
+  if (timeoutMs <= 0 || Platform.OS !== 'web') {
     return fetch(getRequestUrl(path), { ...init, headers: getHeaders(headers), signal });
   }
 

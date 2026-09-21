@@ -44,7 +44,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { streamChatMessage, type ChatImageAttachment } from '@/services/chat-api';
+import { getChatHistory, streamChatMessage, type ChatImageAttachment, type ChatMessageAiInfo } from '@/services/chat-api';
 import { getApiErrorMessage } from '@/services/http';
 
 const STREAMING_CHARACTER_INTERVAL_MS = 18;
@@ -175,13 +175,7 @@ export function CompanionChatScreen({
   const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const reducedMotion = useReducedMotion();
   const footerOffset = useSharedValue(0);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    {
-      id: createMessageId(),
-      role: 'assistant',
-      content: `嗨，我是 ${title}。现在已接入 AI 文字聊天；图片、语音、文件和位置工具会逐步接入。`,
-    },
-  ]);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
   const panelOpen = mode === 'emoji' || mode === 'actions';
   const keyboardUnderlay = keyboardHeight > 0 && mode === 'keyboard' ? KEYBOARD_UNDERLAY : 0;
   const footerBottom =
@@ -194,6 +188,39 @@ export function CompanionChatScreen({
         : insets.bottom;
   const listBottomPadding = footerHeight + footerBottom + Spacing.two;
   const panelStyle = { height: CHAT_PANEL_HEIGHT + insets.bottom, paddingBottom: insets.bottom + Spacing.three };
+  useEffect(() => {
+    let active = true;
+    getChatHistory(conversationId)
+      .then((history) => {
+        if (!active) return;
+        const restored = history.map<ChatMessage>((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          imageUri: message.attachments[0]?.url,
+          aiInfo: message.modelId && message.modelLabel && message.provider && message.protocol
+            ? {
+                modelId: message.modelId,
+                modelLabel: message.modelLabel,
+                provider: message.provider,
+                protocol: message.protocol,
+                inputTokens: message.inputTokens ?? undefined,
+                outputTokens: message.outputTokens ?? undefined,
+              }
+            : undefined,
+        }));
+        setMessages(restored.length ? restored : [{
+          id: createMessageId(),
+          role: 'assistant',
+          content: `嗨，我是 ${title}。有什么想聊的？`,
+        }]);
+      })
+      .catch(() => {
+        if (!active) return;
+        setMessages([{ id: createMessageId(), role: 'assistant', content: `嗨，我是 ${title}。有什么想聊的？` }]);
+      });
+    return () => { active = false; };
+  }, [conversationId, title]);
   useEffect(() => {
     footerOffset.set(
       withTiming(footerBottom, {
@@ -321,6 +348,7 @@ export function CompanionChatScreen({
       visibleStreamingRef.current = '';
       typingQueueRef.current = [];
       streamingStore.set('');
+      let aiInfo: ChatMessageAiInfo | undefined;
 
       try {
         await streamChatMessage({
@@ -331,6 +359,21 @@ export function CompanionChatScreen({
             streamingRef.current += delta;
             typingQueueRef.current.push(...Array.from(delta));
             startTyping();
+          },
+          onImageGenerated: (generatedImages, action) => {
+            const imageContent = action === 'edit' ? '已完成图片编辑。' : '已为你生成图片。';
+            streamingRef.current = imageContent;
+            setMessages((current) =>
+              current.map((message) =>
+                message.id === assistantMessage.id
+                  ? { ...message, content: imageContent, imageUri: generatedImages[0]?.url }
+                  : message,
+              ),
+            );
+            scheduleScrollToBottom();
+          },
+          onCompleted: (nextAiInfo) => {
+            aiInfo = nextAiInfo;
           },
         });
       } catch (error) {
@@ -346,7 +389,11 @@ export function CompanionChatScreen({
         const finalContent = streamingRef.current || '抱歉，聊天服务未返回内容，请重试。';
         setMessages((current) =>
           current.map((message) =>
-            message.id === assistantMessage.id ? { ...message, content: finalContent } : message,
+            message.id === assistantMessage.id
+              ? { ...message, content: finalContent, aiInfo }
+              : message.id === userMessage.id
+                ? { ...message, aiInfo }
+                : message,
           ),
         );
         streamingRef.current = '';
@@ -407,6 +454,13 @@ export function CompanionChatScreen({
     if (!trimmed || isGenerating) return;
     await appendUserTurn({ content: trimmed });
   }, [appendUserTurn, input, isGenerating]);
+
+  const startImageGeneration = useCallback(() => {
+    if (isGenerating) return;
+    setInput((current) => current || '生成一张 ');
+    setMode('keyboard');
+    scheduleScrollToBottom();
+  }, [isGenerating, scheduleScrollToBottom]);
 
   const pickImage = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -728,6 +782,12 @@ export function CompanionChatScreen({
 
               {mode === 'actions' ? (
                 <View style={[styles.panelContent, styles.actionPanel, panelStyle]}>
+                  <ActionTile
+                    label="生图"
+                    icon={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }}
+                    disabled={isGenerating}
+                    onPress={startImageGeneration}
+                  />
                   <ActionTile
                     label="照片"
                     icon={{ ios: 'photo', android: 'image', web: 'image' }}

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -16,7 +17,11 @@ import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import {
   getChatAgentSettings,
+  getAvailableChatModels,
+  getAvailableImageModels,
   type ChatAgentSettings,
+  type ChatModelOption,
+  type ImageModelOption,
   updateChatAgentSettings,
 } from '@/services/chat-api';
 import { getApiErrorMessage } from '@/services/http';
@@ -26,6 +31,8 @@ const FALLBACK_SETTINGS: ChatAgentSettings = {
   agentName: 'LumiMate',
   agentProfile: '',
   responseStyle: '温和、简洁',
+  modelId: 'deepseek-flash',
+  imageModelId: 'gpt-image-2.5-flare',
   contextMessageLimit: 100,
   maxContextMessageLimit: 200,
 };
@@ -37,9 +44,12 @@ export default function AgentSettingsScreen() {
   }>();
   const theme = useTheme();
   const [settings, setSettings] = useState(FALLBACK_SETTINGS);
+  const [availableModels, setAvailableModels] = useState<ChatModelOption[]>([]);
+  const [availableImageModels, setAvailableImageModels] = useState<ImageModelOption[]>([]);
   const [contextLimit, setContextLimit] = useState(String(FALLBACK_SETTINGS.contextMessageLimit));
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [modelPickerCapability, setModelPickerCapability] = useState<'chat' | 'image-generation' | null>(null);
 
   const changeContextLimit = useCallback(
     (delta: number) => {
@@ -54,10 +64,12 @@ export default function AgentSettingsScreen() {
   useEffect(() => {
     let active = true;
 
-    getChatAgentSettings(conversationId)
-      .then((next) => {
+    Promise.all([getChatAgentSettings(conversationId), getAvailableChatModels(), getAvailableImageModels()])
+      .then(([next, models, imageModels]) => {
         if (!active) return;
         setSettings(next);
+        setAvailableModels(models);
+        setAvailableImageModels(imageModels);
         setContextLimit(String(next.contextMessageLimit));
       })
       .catch((error: unknown) => {
@@ -86,6 +98,8 @@ export default function AgentSettingsScreen() {
         agentName: settings.agentName.trim() || FALLBACK_SETTINGS.agentName,
         agentProfile: settings.agentProfile.trim(),
         responseStyle: settings.responseStyle.trim() || FALLBACK_SETTINGS.responseStyle,
+        modelId: settings.modelId,
+        imageModelId: settings.imageModelId,
         contextMessageLimit: parsedLimit,
       });
       setSettings(next);
@@ -173,6 +187,54 @@ export default function AgentSettingsScreen() {
                     style={[styles.input, { color: theme.text, backgroundColor: theme.background, borderColor: theme.backgroundSelected }]}
                   />
                 </SettingsField>
+
+                <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="选择聊天模型"
+                  onPress={() => setModelPickerCapability('chat')}
+                  style={({ pressed }) => [styles.advancedToggle, pressed ? styles.pressed : null]}>
+                  <View style={styles.fieldTitleRow}>
+                    <View style={styles.advancedIcon}>
+                      <SymbolView name={{ ios: 'cpu', android: 'memory', web: 'memory' }} size={16} tintColor="#2878E8" />
+                    </View>
+                    <View style={styles.fieldTitleCopy}>
+                      <ThemedText type="default">高级设置</ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">聊天模型与协议</ThemedText>
+                    </View>
+                    <View style={[styles.selectedModelChip, { backgroundColor: theme.background }]}>
+                      <ThemedText type="smallBold" numberOfLines={1} style={styles.selectedModelText}>
+                        {availableModels.find((model) => model.id === settings.modelId)?.label || settings.modelId}
+                      </ThemedText>
+                      <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={14} tintColor="#2878E8" />
+                    </View>
+                  </View>
+                </Pressable>
+
+                <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="选择图片创作模型"
+                  onPress={() => setModelPickerCapability('image-generation')}
+                  style={({ pressed }) => [styles.advancedToggle, pressed ? styles.pressed : null]}>
+                  <View style={styles.fieldTitleRow}>
+                    <View style={styles.advancedIcon}>
+                      <SymbolView name={{ ios: 'photo.badge.plus', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor="#2878E8" />
+                    </View>
+                    <View style={styles.fieldTitleCopy}>
+                      <ThemedText type="default">图片创作</ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">生图与编辑图片</ThemedText>
+                    </View>
+                    <View style={[styles.selectedModelChip, { backgroundColor: theme.background }]}>
+                      <ThemedText type="smallBold" numberOfLines={1} style={styles.selectedModelText}>
+                        {availableImageModels.find((model) => model.id === settings.imageModelId)?.label || settings.imageModelId}
+                      </ThemedText>
+                      <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={14} tintColor="#2878E8" />
+                    </View>
+                  </View>
+                </Pressable>
               </View>
 
               <View style={styles.sectionHeader}>
@@ -228,6 +290,70 @@ export default function AgentSettingsScreen() {
           </View>
         )}
       </SafeAreaView>
+
+      <Modal
+        visible={modelPickerCapability !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setModelPickerCapability(null)}>
+        <View style={styles.modalRoot}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="关闭模型选择"
+            onPress={() => setModelPickerCapability(null)}
+            style={styles.modalBackdrop}
+          />
+          <View style={[styles.modelSheet, { backgroundColor: theme.background }]}>
+            <View style={[styles.sheetHandle, { backgroundColor: theme.backgroundSelected }]} />
+            <View style={styles.sheetHeader}>
+              <View>
+                <ThemedText type="subtitle">{modelPickerCapability === 'image-generation' ? '选择图片创作模型' : '选择聊天模型'}</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">模型切换将在保存设置后生效</ThemedText>
+              </View>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="关闭模型选择"
+                onPress={() => setModelPickerCapability(null)}
+                style={[styles.closeButton, { backgroundColor: theme.backgroundElement }]}>
+                <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} size={17} tintColor={theme.textSecondary} />
+              </Pressable>
+            </View>
+            <ScrollView contentContainerStyle={styles.sheetContent} showsVerticalScrollIndicator={false}>
+              {(modelPickerCapability === 'image-generation' ? availableImageModels : availableModels).map((model) => {
+                      const selected = modelPickerCapability === 'image-generation'
+                        ? model.id === settings.imageModelId
+                        : model.id === settings.modelId;
+                      return (
+                        <Pressable
+                          key={model.id}
+                          accessibilityRole="radio"
+                          accessibilityState={{ selected }}
+                          onPress={() => {
+                            setSettings((current) => modelPickerCapability === 'image-generation'
+                              ? { ...current, imageModelId: model.id }
+                              : { ...current, modelId: model.id });
+                            setModelPickerCapability(null);
+                          }}
+                          style={({ pressed }) => [
+                            styles.modelOption,
+                            { backgroundColor: selected ? '#EAF2FF' : theme.backgroundElement },
+                            pressed ? styles.pressed : null,
+                          ]}>
+                          <View style={styles.modelBadge}>
+                            <SymbolView name={{ ios: modelPickerCapability === 'image-generation' ? 'photo.fill' : model.protocol === 'anthropic-messages' ? 'text.bubble.fill' : 'bolt.fill', android: modelPickerCapability === 'image-generation' ? 'image' : model.protocol === 'anthropic-messages' ? 'chat' : 'bolt', web: modelPickerCapability === 'image-generation' ? 'image' : model.protocol === 'anthropic-messages' ? 'chat' : 'bolt' }} size={15} tintColor={selected ? '#1769D1' : theme.textSecondary} />
+                          </View>
+                          <View style={styles.modelCopy}>
+                            <ThemedText style={selected ? styles.modelNameSelected : undefined}>{model.label}</ThemedText>
+                            <ThemedText type="small" themeColor="textSecondary">{model.id}</ThemedText>
+                          </View>
+                          {selected ? <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} size={21} tintColor="#2878E8" /> : null}
+                        </Pressable>
+                      );
+                    })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -273,12 +399,28 @@ const styles = StyleSheet.create({
   sectionHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.two, paddingHorizontal: Spacing.one },
   groupCard: { borderRadius: 18, overflow: 'hidden', paddingHorizontal: Spacing.three },
   field: { gap: Spacing.two, paddingVertical: Spacing.three },
+  advancedToggle: { paddingVertical: Spacing.three },
   fieldTitleRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   fieldIcon: { alignItems: 'center', backgroundColor: '#EAF2FF', borderRadius: 9, height: 30, justifyContent: 'center', width: 30 },
+  advancedIcon: { alignItems: 'center', backgroundColor: '#EAF2FF', borderRadius: 12, height: 38, justifyContent: 'center', width: 38 },
   fieldTitleCopy: { flex: 1, gap: 1 },
   divider: { height: StyleSheet.hairlineWidth },
   input: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, fontSize: 16, marginRight: Spacing.two, minHeight: 48, paddingHorizontal: Spacing.three },
   textarea: { minHeight: 118, paddingVertical: Spacing.two },
+  selectedModelChip: { alignItems: 'center', borderRadius: 11, flexDirection: 'row', gap: 3, maxWidth: 154, minHeight: 34, paddingHorizontal: Spacing.two },
+  selectedModelText: { color: '#1769D1', flexShrink: 1 },
+  modalRoot: { flex: 1, justifyContent: 'flex-end' },
+  modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8, 16, 32, 0.42)' },
+  modelSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '78%', paddingTop: Spacing.two },
+  sheetHandle: { alignSelf: 'center', borderRadius: 2, height: 4, width: 38 },
+  sheetHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Spacing.three, paddingTop: Spacing.three },
+  closeButton: { alignItems: 'center', borderRadius: 18, height: 36, justifyContent: 'center', width: 36 },
+  sheetContent: { gap: Spacing.three, padding: Spacing.three, paddingBottom: 44 },
+  modelGroup: { gap: Spacing.one },
+  modelOption: { alignItems: 'center', borderRadius: 16, flexDirection: 'row', gap: Spacing.two, minHeight: 64, paddingHorizontal: Spacing.two },
+  modelBadge: { alignItems: 'center', backgroundColor: 'rgba(40,120,232,0.1)', borderRadius: 12, height: 38, justifyContent: 'center', width: 38 },
+  modelCopy: { flex: 1, gap: 2 },
+  modelNameSelected: { color: '#1769D1', fontWeight: '700' },
   memoryCard: { borderRadius: 18, padding: Spacing.three },
   memoryTopRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   memoryIcon: { alignItems: 'center', backgroundColor: '#EAF2FF', borderRadius: 12, height: 42, justifyContent: 'center', width: 42 },

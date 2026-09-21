@@ -1,3 +1,5 @@
+import type { ChatMessageAiInfo } from '@/services/chat-api';
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -5,4 +7,5 @@ export type ChatMessage = {
   imageUri?: string;
   audioUri?: string;
   audioDuration?: number;
+  aiInfo?: ChatMessageAiInfo;
 };
