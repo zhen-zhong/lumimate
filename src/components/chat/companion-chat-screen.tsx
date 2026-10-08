@@ -44,7 +44,15 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { getChatHistory, streamChatMessage, type ChatImageAttachment, type ChatMessageAiInfo } from '@/services/chat-api';
+import {
+  cancelAgentIntent,
+  confirmAgentIntent,
+  getChatHistory,
+  streamChatMessage,
+  type AgentIntent,
+  type ChatImageAttachment,
+  type ChatMessageAiInfo,
+} from '@/services/chat-api';
 import { getApiErrorMessage } from '@/services/http';
 
 const STREAMING_CHARACTER_INTERVAL_MS = 18;
@@ -349,6 +357,7 @@ export function CompanionChatScreen({
       typingQueueRef.current = [];
       streamingStore.set('');
       let aiInfo: ChatMessageAiInfo | undefined;
+      let proposedIntent: AgentIntent | undefined;
 
       try {
         await streamChatMessage({
@@ -371,6 +380,9 @@ export function CompanionChatScreen({
               ),
             );
             scheduleScrollToBottom();
+          },
+          onIntentProposed: (intent) => {
+            proposedIntent = intent;
           },
           onCompleted: (nextAiInfo) => {
             aiInfo = nextAiInfo;
@@ -403,6 +415,29 @@ export function CompanionChatScreen({
         setIsGenerating(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         scheduleScrollToBottom();
+        if (proposedIntent) {
+          const intent = proposedIntent;
+          const dueAt = new Date(intent.dueAt).toLocaleString('zh-CN', {
+            month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
+          });
+          Alert.alert('创建提醒？', `${dueAt} 提醒你：${intent.title}`, [
+            {
+              text: '取消',
+              style: 'cancel',
+              onPress: () => {
+                void cancelAgentIntent(conversationId, intent.id).catch(() => {});
+              },
+            },
+            {
+              text: '确认',
+              onPress: () => {
+                void confirmAgentIntent(conversationId, intent.id)
+                  .then(() => Alert.alert('提醒已创建', `${dueAt} 会提醒你。`))
+                  .catch((error: unknown) => Alert.alert('无法创建提醒', getApiErrorMessage(error, '请稍后重试')));
+              },
+            },
+          ]);
+        }
       }
     },
     [

@@ -50,7 +50,17 @@ export type StreamChatMessageOptions = {
   attachments?: ChatImageAttachment[];
   onDelta: (delta: string) => void;
   onImageGenerated?: (images: ChatImageAttachment[], action?: 'generate' | 'edit') => void;
+  onIntentProposed?: (intent: AgentIntent) => void;
   onCompleted?: (info: ChatMessageAiInfo) => void;
+};
+
+export type AgentIntent = {
+  id: string;
+  type: 'REMINDER' | 'FOLLOW_UP' | 'PROACTIVE';
+  title: string;
+  dueAt: string;
+  timezone: string;
+  status: 'AWAITING_CONFIRMATION' | 'SCHEDULED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
 };
 
 export type ChatAgentSettings = {
@@ -67,6 +77,42 @@ export type UpdateChatAgentSettings = Pick<
   ChatAgentSettings,
   'agentName' | 'agentProfile' | 'responseStyle' | 'modelId' | 'imageModelId' | 'contextMessageLimit'
 >;
+
+export type CompanionMemoryCategory =
+  | 'PREFERENCE'
+  | 'RELATIONSHIP'
+  | 'COMMITMENT'
+  | 'PLACE'
+  | 'EVENT'
+  | 'FACT';
+
+export type CompanionMemoryStatus = 'CANDIDATE' | 'CONFIRMED' | 'ARCHIVED' | 'DELETED';
+
+export type CompanionMemory = {
+  id: string;
+  category: CompanionMemoryCategory;
+  status: CompanionMemoryStatus;
+  content: string;
+  confidence: number | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CompanionRelationship = {
+  preferredName: string | null;
+  relationshipSummary: string | null;
+  communicationStyle: string | null;
+  emotionSummary: string | null;
+  lastInteractionAt: string | null;
+};
+
+export type CompanionProactivePolicy = {
+  enabled: boolean;
+  quietHoursStart: string | null;
+  quietHoursEnd: string | null;
+  dailyLimit: number;
+  minimumIntervalMinutes: number;
+};
 
 function parseSseEvent(frame: string): SseEvent | null {
   let type = 'message';
@@ -126,12 +172,98 @@ export async function updateChatAgentSettings(
   );
 }
 
+export function getCompanionMemories(conversationId: string) {
+  return apiJson<CompanionMemory[]>(`/v1/chats/${encodeURIComponent(conversationId)}/memories`);
+}
+
+export function confirmCompanionMemory(conversationId: string, memoryId: string) {
+  return apiJson<CompanionMemory>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/memories/${encodeURIComponent(memoryId)}/confirm`,
+    { method: 'POST' },
+  );
+}
+
+export function updateCompanionMemory(
+  conversationId: string,
+  memoryId: string,
+  input: Pick<CompanionMemory, 'content'> & Partial<Pick<CompanionMemory, 'category'>>,
+) {
+  return apiJson<CompanionMemory>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/memories/${encodeURIComponent(memoryId)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export async function removeCompanionMemory(conversationId: string, memoryId: string) {
+  const response = await apiFetch(
+    `/v1/chats/${encodeURIComponent(conversationId)}/memories/${encodeURIComponent(memoryId)}`,
+    { method: 'DELETE' },
+  );
+  await assertApiResponse(response);
+}
+
+export function getCompanionRelationship(conversationId: string) {
+  return apiJson<CompanionRelationship>(`/v1/chats/${encodeURIComponent(conversationId)}/relationship`);
+}
+
+export function updateCompanionRelationship(
+  conversationId: string,
+  input: Partial<Pick<CompanionRelationship, 'preferredName' | 'relationshipSummary' | 'communicationStyle' | 'emotionSummary'>>,
+) {
+  return apiJson<CompanionRelationship>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/relationship`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function getCompanionProactivePolicy(conversationId: string) {
+  return apiJson<CompanionProactivePolicy>(`/v1/chats/${encodeURIComponent(conversationId)}/proactive-policy`);
+}
+
+export function updateCompanionProactivePolicy(
+  conversationId: string,
+  input: Partial<CompanionProactivePolicy>,
+) {
+  return apiJson<CompanionProactivePolicy>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/proactive-policy`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
+export function confirmAgentIntent(conversationId: string, intentId: string) {
+  return apiJson<AgentIntent>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/intents/${encodeURIComponent(intentId)}/confirm`,
+    { method: 'POST' },
+  );
+}
+
+export async function cancelAgentIntent(conversationId: string, intentId: string) {
+  const response = await apiFetch(
+    `/v1/chats/${encodeURIComponent(conversationId)}/intents/${encodeURIComponent(intentId)}`,
+    { method: 'DELETE' },
+  );
+  await assertApiResponse(response);
+}
+
 export async function streamChatMessage({
   conversationId,
   content,
   attachments,
   onDelta,
   onImageGenerated,
+  onIntentProposed,
   onCompleted,
 }: StreamChatMessageOptions) {
   const response = await apiFetch(`/v1/chats/${encodeURIComponent(conversationId)}/messages`, {
@@ -187,6 +319,19 @@ export async function streamChatMessage({
             ? event.data.action
             : undefined;
           if (images.length) onImageGenerated?.(images, action);
+        }
+        if (event.type === 'intent.proposed' && event.data.intent && typeof event.data.intent === 'object') {
+          const intent = event.data.intent as Record<string, unknown>;
+          if (
+            typeof intent.id === 'string' &&
+            typeof intent.title === 'string' &&
+            typeof intent.dueAt === 'string' &&
+            typeof intent.timezone === 'string' &&
+            (intent.type === 'REMINDER' || intent.type === 'FOLLOW_UP' || intent.type === 'PROACTIVE') &&
+            typeof intent.status === 'string'
+          ) {
+            onIntentProposed?.(intent as AgentIntent);
+          }
         }
         if (event.type === 'message.completed') {
           const model = event.data.model;

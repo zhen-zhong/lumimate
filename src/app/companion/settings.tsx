@@ -1,4 +1,4 @@
-import { Stack, useLocalSearchParams } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { SymbolView, type AndroidSymbol, type SFSymbol } from 'expo-symbols';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -8,6 +8,7 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
+  Switch,
   TextInput,
   View,
 } from 'react-native';
@@ -16,12 +17,15 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import {
+  getCompanionProactivePolicy,
   getChatAgentSettings,
   getAvailableChatModels,
   getAvailableImageModels,
   type ChatAgentSettings,
   type ChatModelOption,
+  type CompanionProactivePolicy,
   type ImageModelOption,
+  updateCompanionProactivePolicy,
   updateChatAgentSettings,
 } from '@/services/chat-api';
 import { getApiErrorMessage } from '@/services/http';
@@ -37,16 +41,26 @@ const FALLBACK_SETTINGS: ChatAgentSettings = {
   maxContextMessageLimit: 200,
 };
 
+const FALLBACK_PROACTIVE_POLICY: CompanionProactivePolicy = {
+  enabled: false,
+  quietHoursStart: null,
+  quietHoursEnd: null,
+  dailyLimit: 1,
+  minimumIntervalMinutes: 720,
+};
+
 export default function AgentSettingsScreen() {
   const { conversationId = 'lumimate', title = 'LumiMate' } = useLocalSearchParams<{
     conversationId?: string;
     title?: string;
   }>();
+  const router = useRouter();
   const theme = useTheme();
   const [settings, setSettings] = useState(FALLBACK_SETTINGS);
   const [availableModels, setAvailableModels] = useState<ChatModelOption[]>([]);
   const [availableImageModels, setAvailableImageModels] = useState<ImageModelOption[]>([]);
   const [contextLimit, setContextLimit] = useState(String(FALLBACK_SETTINGS.contextMessageLimit));
+  const [proactivePolicy, setProactivePolicy] = useState(FALLBACK_PROACTIVE_POLICY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [modelPickerCapability, setModelPickerCapability] = useState<'chat' | 'image-generation' | null>(null);
@@ -65,12 +79,14 @@ export default function AgentSettingsScreen() {
     let active = true;
 
     Promise.all([getChatAgentSettings(conversationId), getAvailableChatModels(), getAvailableImageModels()])
-      .then(([next, models, imageModels]) => {
+      .then(async ([next, models, imageModels]) => {
         if (!active) return;
         setSettings(next);
         setAvailableModels(models);
         setAvailableImageModels(imageModels);
         setContextLimit(String(next.contextMessageLimit));
+        const policy = await getCompanionProactivePolicy(conversationId).catch(() => null);
+        if (active && policy) setProactivePolicy(policy);
       })
       .catch((error: unknown) => {
         if (!active) return;
@@ -102,7 +118,11 @@ export default function AgentSettingsScreen() {
         imageModelId: settings.imageModelId,
         contextMessageLimit: parsedLimit,
       });
+      const nextPolicy = await updateCompanionProactivePolicy(conversationId, {
+        enabled: proactivePolicy.enabled,
+      });
       setSettings(next);
+      setProactivePolicy(nextPolicy);
       setContextLimit(String(next.contextMessageLimit));
       Alert.alert('已保存', '下一条消息起使用新的智能体设定。');
     } catch (error) {
@@ -110,7 +130,7 @@ export default function AgentSettingsScreen() {
     } finally {
       setSaving(false);
     }
-  }, [contextLimit, conversationId, settings]);
+  }, [contextLimit, conversationId, proactivePolicy.enabled, settings]);
 
   return (
     <>
@@ -275,6 +295,44 @@ export default function AgentSettingsScreen() {
               <ThemedText type="small" themeColor="textSecondary" style={styles.memoryHint}>
                 更多上下文更连贯；过长会增加等待时间与模型费用。
               </ThemedText>
+
+              <View style={styles.sectionHeader}>
+                <ThemedText type="smallBold" themeColor="textSecondary">陪伴记忆</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">由你确认才会使用</ThemedText>
+              </View>
+
+              <View style={[styles.groupCard, { backgroundColor: theme.backgroundElement }]}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="管理陪伴记忆"
+                  onPress={() => router.push({ pathname: '/companion/memory' as never, params: { conversationId, title } })}
+                  style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
+                  <View style={styles.fieldIcon}>
+                    <SymbolView name={{ ios: 'brain.head.profile', android: 'psychology', web: 'psychology' }} size={17} tintColor="#2878E8" />
+                  </View>
+                  <View style={styles.fieldTitleCopy}>
+                    <ThemedText type="default">管理记忆与称呼</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">查看候选记忆，编辑长期偏好</ThemedText>
+                  </View>
+                  <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.textSecondary} />
+                </Pressable>
+                <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+                <View style={styles.companionRow}>
+                  <View style={styles.fieldIcon}>
+                    <SymbolView name={{ ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }} size={16} tintColor="#2878E8" />
+                  </View>
+                  <View style={styles.fieldTitleCopy}>
+                    <ThemedText type="default">主动陪伴</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">默认关闭；受静默时间和频率限制</ThemedText>
+                  </View>
+                  <Switch
+                    value={proactivePolicy.enabled}
+                    onValueChange={(enabled) => setProactivePolicy((current) => ({ ...current, enabled }))}
+                    trackColor={{ false: theme.backgroundSelected, true: '#8FC0FA' }}
+                    thumbColor={proactivePolicy.enabled ? '#2878E8' : theme.background}
+                  />
+                </View>
+              </View>
             </ScrollView>
 
             <View style={[styles.saveBar, { backgroundColor: theme.background, borderTopColor: theme.backgroundElement }]}>
@@ -429,6 +487,7 @@ const styles = StyleSheet.create({
   stepperButton: { alignItems: 'center', height: 34, justifyContent: 'center', width: 28 },
   limitValue: { fontSize: 15, fontWeight: '700', minWidth: 46, textAlign: 'center' },
   memoryHint: { lineHeight: 18, paddingHorizontal: Spacing.one },
+  companionRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minHeight: 66, paddingVertical: Spacing.two },
   saveBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.three, paddingTop: Spacing.two, paddingBottom: Spacing.three },
   saveButton: { alignItems: 'center', backgroundColor: '#2878E8', borderRadius: 15, minHeight: 52, justifyContent: 'center' },
   saveText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
