@@ -45,11 +45,12 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import {
-  cancelAgentIntent,
-  confirmAgentIntent,
+  cancelAgentToolRun,
+  confirmAgentToolRun,
   getChatHistory,
+  getAgentToolRuns,
   streamChatMessage,
-  type AgentIntent,
+  type AgentToolRun,
   type ChatImageAttachment,
   type ChatMessageAiInfo,
 } from '@/services/chat-api';
@@ -184,6 +185,8 @@ export function CompanionChatScreen({
   const reducedMotion = useReducedMotion();
   const footerOffset = useSharedValue(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [pendingToolRun, setPendingToolRun] = useState<AgentToolRun | null>(null);
+  const [resolvingToolRun, setResolvingToolRun] = useState(false);
   const panelOpen = mode === 'emoji' || mode === 'actions';
   const keyboardUnderlay = keyboardHeight > 0 && mode === 'keyboard' ? KEYBOARD_UNDERLAY : 0;
   const footerBottom =
@@ -229,6 +232,21 @@ export function CompanionChatScreen({
       });
     return () => { active = false; };
   }, [conversationId, title]);
+  useEffect(() => {
+    let active = true;
+    getAgentToolRuns(conversationId)
+      .then((runs) => {
+        if (!active) return;
+        const pending = runs.find(
+          (run) => run.toolName === 'task.create' && run.status === 'AWAITING_CONFIRMATION',
+        );
+        setPendingToolRun(pending ?? null);
+      })
+      .catch(() => {
+        // Chat remains usable if tool history cannot be restored.
+      });
+    return () => { active = false; };
+  }, [conversationId]);
   useEffect(() => {
     footerOffset.set(
       withTiming(footerBottom, {
@@ -357,7 +375,7 @@ export function CompanionChatScreen({
       typingQueueRef.current = [];
       streamingStore.set('');
       let aiInfo: ChatMessageAiInfo | undefined;
-      let proposedIntent: AgentIntent | undefined;
+      let proposedRun: AgentToolRun | undefined;
 
       try {
         await streamChatMessage({
@@ -381,8 +399,8 @@ export function CompanionChatScreen({
             );
             scheduleScrollToBottom();
           },
-          onIntentProposed: (intent) => {
-            proposedIntent = intent;
+          onAgentRunProposed: (run) => {
+            proposedRun = run;
           },
           onCompleted: (nextAiInfo) => {
             aiInfo = nextAiInfo;
@@ -415,29 +433,7 @@ export function CompanionChatScreen({
         setIsGenerating(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         scheduleScrollToBottom();
-        if (proposedIntent) {
-          const intent = proposedIntent;
-          const dueAt = new Date(intent.dueAt).toLocaleString('zh-CN', {
-            month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false,
-          });
-          Alert.alert('创建提醒？', `${dueAt} 提醒你：${intent.title}`, [
-            {
-              text: '取消',
-              style: 'cancel',
-              onPress: () => {
-                void cancelAgentIntent(conversationId, intent.id).catch(() => {});
-              },
-            },
-            {
-              text: '确认',
-              onPress: () => {
-                void confirmAgentIntent(conversationId, intent.id)
-                  .then(() => Alert.alert('提醒已创建', `${dueAt} 会提醒你。`))
-                  .catch((error: unknown) => Alert.alert('无法创建提醒', getApiErrorMessage(error, '请稍后重试')));
-              },
-            },
-          ]);
-        }
+        if (proposedRun?.toolName === 'task.create') setPendingToolRun(proposedRun);
       }
     },
     [
@@ -449,6 +445,39 @@ export function CompanionChatScreen({
       waitForTypingDrain,
     ],
   );
+
+  const confirmToolRun = useCallback(async () => {
+    if (!pendingToolRun || pendingToolRun.toolName !== 'task.create') return;
+    setResolvingToolRun(true);
+    try {
+      await confirmAgentToolRun(conversationId, pendingToolRun.id);
+      const taskTitle = typeof pendingToolRun.input.title === 'string' ? pendingToolRun.input.title : '提醒';
+      setMessages((current) => [...current, {
+        id: createMessageId(),
+        role: 'assistant',
+        content: `已创建提醒：${taskTitle}`,
+      }]);
+      setPendingToolRun(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
+    } catch (error) {
+      Alert.alert('无法创建提醒', getApiErrorMessage(error, '请稍后重试'));
+    } finally {
+      setResolvingToolRun(false);
+    }
+  }, [conversationId, pendingToolRun]);
+
+  const cancelToolRun = useCallback(async () => {
+    if (!pendingToolRun) return;
+    setResolvingToolRun(true);
+    try {
+      await cancelAgentToolRun(conversationId, pendingToolRun.id);
+      setPendingToolRun(null);
+    } catch (error) {
+      Alert.alert('无法取消工具调用', getApiErrorMessage(error, '请稍后重试'));
+    } finally {
+      setResolvingToolRun(false);
+    }
+  }, [conversationId, pendingToolRun]);
 
   const openImagePreview = useCallback((asset: ImagePicker.ImagePickerAsset | undefined, label: string) => {
     if (!asset?.uri) return;
@@ -762,6 +791,15 @@ export function CompanionChatScreen({
           />
         </View>
 
+        {pendingToolRun?.toolName === 'task.create' ? (
+          <ToolConfirmationCard
+            run={pendingToolRun}
+            submitting={resolvingToolRun}
+            onConfirm={() => void confirmToolRun()}
+            onCancel={() => void cancelToolRun()}
+          />
+        ) : null}
+
         <Animated.View
           style={[
             styles.footer,
@@ -894,6 +932,37 @@ export function CompanionChatScreen({
         onClose={() => setLocationModalVisible(false)}
         onSend={sendSelectedLocation}
       />
+    </View>
+  );
+}
+
+function ToolConfirmationCard({
+  run,
+  submitting,
+  onConfirm,
+  onCancel,
+}: {
+  run: AgentToolRun;
+  submitting: boolean;
+  onConfirm: () => void;
+  onCancel: () => void;
+}) {
+  const theme = useTheme();
+  const title = typeof run.input.title === 'string' ? run.input.title : '未命名提醒';
+  const date = typeof run.input.dueAt === 'string'
+    ? new Date(run.input.dueAt).toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
+    : '时间待确认';
+  return (
+    <View style={[styles.toolCard, { backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}>
+      <View style={styles.toolHeader}>
+        <View style={styles.toolIcon}><SymbolView name={{ ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }} size={16} tintColor="#2878E8" /></View>
+        <View style={styles.toolCopy}><ThemedText type="smallBold">创建提醒</ThemedText><ThemedText type="small" themeColor="textSecondary">需要你的确认后才会安排</ThemedText></View>
+      </View>
+      <View style={[styles.toolDetail, { backgroundColor: theme.background }]}><ThemedText type="smallBold">{title}</ThemedText><ThemedText type="small" themeColor="textSecondary">{date}</ThemedText></View>
+      <View style={styles.toolActions}>
+        <Pressable disabled={submitting} onPress={onCancel} style={({ pressed }) => [styles.toolCancel, { backgroundColor: theme.background }, pressed || submitting ? styles.pressed : null]}><ThemedText type="smallBold">取消</ThemedText></Pressable>
+        <Pressable disabled={submitting} onPress={onConfirm} style={({ pressed }) => [styles.toolConfirm, pressed || submitting ? styles.pressed : null]}>{submitting ? <ActivityIndicator color="#FFFFFF" /> : <ThemedText type="smallBold" style={styles.toolConfirmText}>确认创建</ThemedText>}</Pressable>
+      </View>
     </View>
   );
 }
@@ -1130,6 +1199,60 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: MaxContentWidth,
     alignSelf: 'center',
+  },
+  toolCard: {
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  toolHeader: {
+    alignItems: 'center',
+    flexDirection: 'row',
+    gap: Spacing.two,
+  },
+  toolIcon: {
+    alignItems: 'center',
+    backgroundColor: '#EAF2FF',
+    borderRadius: 10,
+    height: 34,
+    justifyContent: 'center',
+    width: 34,
+  },
+  toolCopy: {
+    flex: 1,
+    gap: 1,
+  },
+  toolDetail: {
+    borderRadius: 11,
+    gap: 2,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.one,
+  },
+  toolActions: {
+    flexDirection: 'row',
+    gap: Spacing.two,
+    justifyContent: 'flex-end',
+  },
+  toolCancel: {
+    alignItems: 'center',
+    borderRadius: 10,
+    height: 38,
+    justifyContent: 'center',
+    paddingHorizontal: Spacing.three,
+  },
+  toolConfirm: {
+    alignItems: 'center',
+    backgroundColor: '#2878E8',
+    borderRadius: 10,
+    height: 38,
+    justifyContent: 'center',
+    minWidth: 94,
+    paddingHorizontal: Spacing.two,
+  },
+  toolConfirmText: {
+    color: '#FFFFFF',
   },
   panelContent: {
     width: '100%',

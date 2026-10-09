@@ -58,6 +58,13 @@
         }
       ],
       [
+        "expo-notifications",
+        {
+          "color": "#208AEF",
+          "defaultChannel": "reminders"
+        }
+      ],
+      [
         "expo-gaode-map-navigation",
         {
           "androidKey": "your-android-key",

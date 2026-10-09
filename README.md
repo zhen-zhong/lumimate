@@ -21,6 +21,7 @@ LumiMate 是一个基于 Expo / React Native 的 AI 陪伴应用。当前定位�
   - 设置
 - iOS Bundle ID：`com.zhenzhong.lumimate`
 - Expo / EAS 项目配置已写入 `app.json`
+- 提醒与主动陪伴支持 Expo Push 开关；点击通知返回对应聊天。
 
 ## 本地启动
 
@@ -54,6 +55,10 @@ npm run web
 npm run lint
 npx tsc --noEmit
 ```
+
+## 推送通知
+
+在“提醒与陪伴”页开启“推送提醒”后，App 才会请求系统权限并把 `ExpoPushToken` 登记到服务端。Android Expo Go 不支持远程推送；本项目应使用新的 Development Build 或 TestFlight 构建。服务端还需完成 APNs/FCM 的 EAS 凭据配置。
 
 ## 项目结构
 

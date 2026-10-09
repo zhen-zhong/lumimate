@@ -304,6 +304,21 @@ export default function AgentSettingsScreen() {
               <View style={[styles.groupCard, { backgroundColor: theme.backgroundElement }]}>
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel="打开技能中心"
+                  onPress={() => router.push({ pathname: '/companion/skills' as never, params: { conversationId, title } })}
+                  style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
+                  <View style={styles.fieldIcon}>
+                    <SymbolView name={{ ios: 'puzzlepiece.extension.fill', android: 'extension', web: 'extension' }} size={17} tintColor="#2878E8" />
+                  </View>
+                  <View style={styles.fieldTitleCopy}>
+                    <ThemedText type="default">技能中心</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">为当前陪伴启用专属能力</ThemedText>
+                  </View>
+                  <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.textSecondary} />
+                </Pressable>
+                <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+                <Pressable
+                  accessibilityRole="button"
                   accessibilityLabel="管理陪伴记忆"
                   onPress={() => router.push({ pathname: '/companion/memory' as never, params: { conversationId, title } })}
                   style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
@@ -313,6 +328,21 @@ export default function AgentSettingsScreen() {
                   <View style={styles.fieldTitleCopy}>
                     <ThemedText type="default">管理记忆与称呼</ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">查看候选记忆，编辑长期偏好</ThemedText>
+                  </View>
+                  <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.textSecondary} />
+                </Pressable>
+                <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="打开提醒与主动陪伴"
+                  onPress={() => router.push({ pathname: '/companion/tasks' as never, params: { conversationId, title } })}
+                  style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
+                  <View style={styles.fieldIcon}>
+                    <SymbolView name={{ ios: 'checklist', android: 'checklist', web: 'checklist' }} size={17} tintColor="#2878E8" />
+                  </View>
+                  <View style={styles.fieldTitleCopy}>
+                    <ThemedText type="default">提醒与主动陪伴</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">查看提醒、静默时间与联系频率</ThemedText>
                   </View>
                   <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.textSecondary} />
                 </Pressable>

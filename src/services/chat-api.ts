@@ -50,7 +50,7 @@ export type StreamChatMessageOptions = {
   attachments?: ChatImageAttachment[];
   onDelta: (delta: string) => void;
   onImageGenerated?: (images: ChatImageAttachment[], action?: 'generate' | 'edit') => void;
-  onIntentProposed?: (intent: AgentIntent) => void;
+  onAgentRunProposed?: (run: AgentToolRun) => void;
   onCompleted?: (info: ChatMessageAiInfo) => void;
 };
 
@@ -61,6 +61,74 @@ export type AgentIntent = {
   dueAt: string;
   timezone: string;
   status: 'AWAITING_CONFIRMATION' | 'SCHEDULED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
+};
+
+export type AgentToolRun = {
+  id: string;
+  toolName: 'task.create' | 'task.cancel' | 'task.list' | string;
+  permission: 'READ' | 'WRITE' | 'SENSITIVE';
+  status: 'AWAITING_CONFIRMATION' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+  input: {
+    title?: string;
+    dueAt?: string;
+    timezone?: string;
+    [key: string]: unknown;
+  };
+};
+
+export type PushDevice = {
+  id: string;
+  platform: 'IOS' | 'ANDROID';
+  enabled: boolean;
+  lastSeenAt: string;
+  createdAt: string;
+};
+
+export type SkillPluginManifest = {
+  schemaVersion: 1;
+  id: string;
+  version: string;
+  toolGrants: string[];
+  memoryCategories: string[];
+  knowledgeBindings: string[];
+  limits: {
+    maxPromptChars: number;
+    maxRetrievedChunks: number;
+    maxToolCalls: number;
+  };
+  riskPolicy: string;
+  ui: { icon: string; category: string };
+};
+
+export type SkillPluginCatalogItem = {
+  id: string;
+  displayName: string;
+  description: string;
+  versions: {
+    id: string;
+    version: string;
+    manifest: SkillPluginManifest;
+    publishedAt: string | null;
+  }[];
+};
+
+export type ConversationSkillPlugin = {
+  id: string;
+  enabled: boolean;
+  priority: number;
+  memoryEnabled: boolean;
+  plugin: {
+    id: string;
+    displayName: string;
+    description: string;
+    status: 'ENABLED' | 'DISABLED' | 'ARCHIVED';
+  };
+  version: {
+    id: string;
+    version: string;
+    manifest: SkillPluginManifest;
+    publishedAt: string | null;
+  };
 };
 
 export type ChatAgentSettings = {
@@ -249,6 +317,10 @@ export function confirmAgentIntent(conversationId: string, intentId: string) {
   );
 }
 
+export function getAgentIntents(conversationId: string) {
+  return apiJson<AgentIntent[]>(`/v1/chats/${encodeURIComponent(conversationId)}/intents`);
+}
+
 export async function cancelAgentIntent(conversationId: string, intentId: string) {
   const response = await apiFetch(
     `/v1/chats/${encodeURIComponent(conversationId)}/intents/${encodeURIComponent(intentId)}`,
@@ -257,13 +329,78 @@ export async function cancelAgentIntent(conversationId: string, intentId: string
   await assertApiResponse(response);
 }
 
+export function confirmAgentToolRun(conversationId: string, runId: string) {
+  return apiJson<AgentToolRun>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/agent-runs/${encodeURIComponent(runId)}/confirm`,
+    { method: 'POST' },
+  );
+}
+
+export function getAgentToolRuns(conversationId: string) {
+  return apiJson<AgentToolRun[]>(`/v1/chats/${encodeURIComponent(conversationId)}/agent-runs`);
+}
+
+export async function cancelAgentToolRun(conversationId: string, runId: string) {
+  const response = await apiFetch(
+    `/v1/chats/${encodeURIComponent(conversationId)}/agent-runs/${encodeURIComponent(runId)}`,
+    { method: 'DELETE' },
+  );
+  await assertApiResponse(response);
+}
+
+export function getPushDevices(conversationId: string) {
+  return apiJson<PushDevice[]>(`/v1/chats/${encodeURIComponent(conversationId)}/push-devices`);
+}
+
+export function registerPushDevice(
+  conversationId: string,
+  input: { expoPushToken: string; platform: 'ios' | 'android' },
+) {
+  return apiJson<PushDevice>(`/v1/chats/${encodeURIComponent(conversationId)}/push-devices`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(input),
+  });
+}
+
+export async function disablePushDevice(conversationId: string, expoPushToken: string) {
+  const response = await apiFetch(
+    `/v1/chats/${encodeURIComponent(conversationId)}/push-devices/${encodeURIComponent(expoPushToken)}`,
+    { method: 'DELETE' },
+  );
+  await assertApiResponse(response);
+}
+
+export function getSkillPluginCatalog() {
+  return apiJson<SkillPluginCatalogItem[]>('/v1/skill-plugins');
+}
+
+export function getConversationSkillPlugins(conversationId: string) {
+  return apiJson<ConversationSkillPlugin[]>(`/v1/chats/${encodeURIComponent(conversationId)}/skill-plugins`);
+}
+
+export function updateConversationSkillPlugin(
+  conversationId: string,
+  pluginId: string,
+  input: { enabled: boolean; version?: string; priority?: number; memoryEnabled?: boolean },
+) {
+  return apiJson<ConversationSkillPlugin[]>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/skill-plugins/${encodeURIComponent(pluginId)}`,
+    {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
+}
+
 export async function streamChatMessage({
   conversationId,
   content,
   attachments,
   onDelta,
   onImageGenerated,
-  onIntentProposed,
+  onAgentRunProposed,
   onCompleted,
 }: StreamChatMessageOptions) {
   const response = await apiFetch(`/v1/chats/${encodeURIComponent(conversationId)}/messages`, {
@@ -320,17 +457,16 @@ export async function streamChatMessage({
             : undefined;
           if (images.length) onImageGenerated?.(images, action);
         }
-        if (event.type === 'intent.proposed' && event.data.intent && typeof event.data.intent === 'object') {
-          const intent = event.data.intent as Record<string, unknown>;
+        if (event.type === 'agent.run.proposed' && event.data.run && typeof event.data.run === 'object') {
+          const run = event.data.run as Record<string, unknown>;
           if (
-            typeof intent.id === 'string' &&
-            typeof intent.title === 'string' &&
-            typeof intent.dueAt === 'string' &&
-            typeof intent.timezone === 'string' &&
-            (intent.type === 'REMINDER' || intent.type === 'FOLLOW_UP' || intent.type === 'PROACTIVE') &&
-            typeof intent.status === 'string'
+            typeof run.id === 'string' &&
+            typeof run.toolName === 'string' &&
+            (run.permission === 'READ' || run.permission === 'WRITE' || run.permission === 'SENSITIVE') &&
+            typeof run.status === 'string' &&
+            run.input !== null && typeof run.input === 'object'
           ) {
-            onIntentProposed?.(intent as AgentIntent);
+            onAgentRunProposed?.(run as AgentToolRun);
           }
         }
         if (event.type === 'message.completed') {
