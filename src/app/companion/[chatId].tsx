@@ -3,6 +3,7 @@ import { SymbolView } from 'expo-symbols';
 import { Pressable } from 'react-native';
 
 import { CompanionChatScreen } from '@/components/chat';
+import { lockCompanionChatScroll } from '@/components/chat/chat-scroll-lock';
 import { getCompanionChat } from '@/data/companion-chats';
 
 export default function CompanionChatRoute() {
@@ -16,17 +17,19 @@ export default function CompanionChatRoute() {
         options={{
           title: chat.name,
           headerBackButtonDisplayMode: 'minimal',
+          freezeOnBlur: true,
           headerRight: () => (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="智能体设置"
               hitSlop={12}
-              onPress={() =>
+              onPress={() => {
+                lockCompanionChatScroll(chat.id);
                 router.push({
                   pathname: '/companion/settings',
                   params: { conversationId: chat.id, title: chat.name },
-                })
-              }
+                });
+              }}
               style={{ marginRight: 8 }}>
               <SymbolView
                 name={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}

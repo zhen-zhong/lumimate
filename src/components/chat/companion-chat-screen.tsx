@@ -8,6 +8,7 @@ import {
 import * as Haptics from 'expo-haptics';
 import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
+import { useFocusEffect } from 'expo-router';
 import { SymbolView, type AndroidSymbol, type SFSymbol } from 'expo-symbols';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -17,6 +18,8 @@ import {
   Image,
   Keyboard,
   type LayoutChangeEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Modal,
   Platform,
   Pressable,
@@ -38,6 +41,10 @@ import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context'
 
 import { ChatMessageBubble } from '@/components/chat/message';
 import { PromptInput } from '@/components/chat/prompt-input';
+import {
+  isCompanionChatScrollLocked,
+  unlockCompanionChatScroll,
+} from '@/components/chat/chat-scroll-lock';
 import { createStreamingStore, useStreamingText } from '@/components/chat/streaming-store';
 import type { ChatMessage } from '@/components/chat/types';
 import { ThemedText } from '@/components/themed-text';
@@ -55,6 +62,7 @@ import {
   type ChatMessageAiInfo,
 } from '@/services/chat-api';
 import { getApiErrorMessage } from '@/services/http';
+import { readCachedChatHistory, writeCachedChatHistory } from '@/services/chat-history-cache';
 
 const STREAMING_CHARACTER_INTERVAL_MS = 18;
 const CHAT_PANEL_HEIGHT = 236;
@@ -64,6 +72,26 @@ const PANEL_TRANSITION_MS = 180;
 const MAP_TILE_ZOOM = 16;
 const MAX_IMAGE_DATA_URL_LENGTH = 15 * 1024 * 1024;
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
+const SCROLL_BOTTOM_THRESHOLD = 24;
+
+function mapHistoryMessages(history: Awaited<ReturnType<typeof getChatHistory>>): ChatMessage[] {
+  return history.map<ChatMessage>((message) => ({
+    id: message.id,
+    role: message.role,
+    content: message.content,
+    imageUri: message.attachments[0]?.url,
+    aiInfo: message.modelId && message.modelLabel && message.provider && message.protocol
+      ? {
+          modelId: message.modelId,
+          modelLabel: message.modelLabel,
+          provider: message.provider,
+          protocol: message.protocol,
+          inputTokens: message.inputTokens ?? undefined,
+          outputTokens: message.outputTokens ?? undefined,
+        }
+      : undefined,
+  }));
+}
 
 function createMessageId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -168,8 +196,11 @@ export function CompanionChatScreen({
   const typingDrainResolversRef = useRef<(() => void)[]>([]);
   const recordingStartedAtRef = useRef<number | null>(null);
   const recordingActiveRef = useRef(false);
-  const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const keyboardAnimationDurationRef = useRef(KEYBOARD_TRANSITION_MS);
+  const historyLoadedRef = useRef(false);
+  const isNearBottomRef = useRef(true);
+  const isScreenFocusedRef = useRef(false);
+  const hasSentDuringHistoryLoadRef = useRef(false);
 
   const [input, setInput] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -187,6 +218,7 @@ export function CompanionChatScreen({
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [pendingToolRun, setPendingToolRun] = useState<AgentToolRun | null>(null);
   const [resolvingToolRun, setResolvingToolRun] = useState(false);
+  const invertedMessages = useMemo(() => [...messages].reverse(), [messages]);
   const panelOpen = mode === 'emoji' || mode === 'actions';
   const keyboardUnderlay = keyboardHeight > 0 && mode === 'keyboard' ? KEYBOARD_UNDERLAY : 0;
   const footerBottom =
@@ -197,41 +229,55 @@ export function CompanionChatScreen({
       : panelOpen
         ? 0
         : insets.bottom;
-  const listBottomPadding = footerHeight + footerBottom + Spacing.two;
+  const listBottomPadding = footerHeight + footerBottom;
   const panelStyle = { height: CHAT_PANEL_HEIGHT + insets.bottom, paddingBottom: insets.bottom + Spacing.three };
   useEffect(() => {
     let active = true;
-    getChatHistory(conversationId)
-      .then((history) => {
-        if (!active) return;
-        const restored = history.map<ChatMessage>((message) => ({
-          id: message.id,
-          role: message.role,
-          content: message.content,
-          imageUri: message.attachments[0]?.url,
-          aiInfo: message.modelId && message.modelLabel && message.provider && message.protocol
-            ? {
-                modelId: message.modelId,
-                modelLabel: message.modelLabel,
-                provider: message.provider,
-                protocol: message.protocol,
-                inputTokens: message.inputTokens ?? undefined,
-                outputTokens: message.outputTokens ?? undefined,
-              }
-            : undefined,
-        }));
-        setMessages(restored.length ? restored : [{
+    historyLoadedRef.current = false;
+    isNearBottomRef.current = true;
+    hasSentDuringHistoryLoadRef.current = false;
+
+    void (async () => {
+      const cached = await readCachedChatHistory(conversationId);
+      if (!active) return;
+
+      if (cached?.length) {
+        historyLoadedRef.current = true;
+        setMessages(cached);
+      }
+
+      try {
+        const history = await getChatHistory(conversationId);
+        if (!active || hasSentDuringHistoryLoadRef.current) return;
+
+        const restored = mapHistoryMessages(history);
+        const nextMessages = restored.length ? restored : [{
           id: createMessageId(),
-          role: 'assistant',
+          role: 'assistant' as const,
           content: `嗨，我是 ${title}。有什么想聊的？`,
-        }]);
-      })
-      .catch(() => {
-        if (!active) return;
-        setMessages([{ id: createMessageId(), role: 'assistant', content: `嗨，我是 ${title}。有什么想聊的？` }]);
-      });
+        }];
+        historyLoadedRef.current = true;
+        setMessages(nextMessages);
+        void writeCachedChatHistory(conversationId, nextMessages);
+      } catch {
+        if (!active || cached?.length) return;
+        const fallback = [{
+          id: createMessageId(),
+          role: 'assistant' as const,
+          content: `嗨，我是 ${title}。有什么想聊的？`,
+        }];
+        historyLoadedRef.current = true;
+        setMessages(fallback);
+      }
+    })();
+
     return () => { active = false; };
   }, [conversationId, title]);
+
+  useEffect(() => {
+    if (!historyLoadedRef.current || messages.length === 0) return;
+    void writeCachedChatHistory(conversationId, messages);
+  }, [conversationId, messages]);
   useEffect(() => {
     let active = true;
     getAgentToolRuns(conversationId)
@@ -260,39 +306,38 @@ export function CompanionChatScreen({
     transform: [{ translateY: -footerOffset.get() }],
   }));
 
-  const scrollToBottom = useCallback((animated = true) => {
+  const scrollToLatest = useCallback((animated = true) => {
+    listRef.current?.scrollToOffset({ offset: 0, animated });
+  }, []);
+
+  const scrollToLatestAfterRender = useCallback((animated = true) => {
     requestAnimationFrame(() => {
-      listRef.current?.scrollToEnd({ animated });
+      if (!isScreenFocusedRef.current || isCompanionChatScrollLocked(conversationId)) return;
+      scrollToLatest(animated);
     });
+  }, [conversationId, scrollToLatest]);
+
+  const onListScroll = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    isNearBottomRef.current = event.nativeEvent.contentOffset.y <= SCROLL_BOTTOM_THRESHOLD;
   }, []);
 
-  const clearScrollTimers = useCallback(() => {
-    scrollTimersRef.current.forEach(clearTimeout);
-    scrollTimersRef.current = [];
-  }, []);
-
-  const scheduleScrollToBottom = useCallback(
-    (animated = true) => {
-      clearScrollTimers();
-      scrollToBottom(animated);
-      [80, 180, 320, 520, 760].forEach((delay) => {
-        const timer = setTimeout(() => scrollToBottom(animated), delay);
-        scrollTimersRef.current.push(timer);
-      });
-    },
-    [clearScrollTimers, scrollToBottom],
-  );
+  useFocusEffect(useCallback(() => {
+    unlockCompanionChatScroll(conversationId);
+    isScreenFocusedRef.current = true;
+    return () => {
+      isScreenFocusedRef.current = false;
+    };
+  }, [conversationId]));
 
   const onFooterLayout = useCallback(
     (event: LayoutChangeEvent) => {
       const nextHeight = Math.ceil(event.nativeEvent.layout.height);
       setFooterHeight((current) => {
         if (Math.abs(current - nextHeight) < 1) return current;
-        scheduleScrollToBottom(false);
         return nextHeight;
       });
     },
-    [scheduleScrollToBottom],
+    [],
   );
 
   const resolveTypingDrain = useCallback(() => {
@@ -314,12 +359,12 @@ export function CompanionChatScreen({
 
       visibleStreamingRef.current += character;
       streamingStore.set(visibleStreamingRef.current);
-      scrollToBottom(false);
+      if (isNearBottomRef.current) scrollToLatestAfterRender(false);
       typingTimerRef.current = setTimeout(typeNextCharacter, STREAMING_CHARACTER_INTERVAL_MS);
     };
 
     typeNextCharacter();
-  }, [resolveTypingDrain, scrollToBottom, streamingStore]);
+  }, [resolveTypingDrain, scrollToLatestAfterRender, streamingStore]);
 
   const waitForTypingDrain = useCallback(() => {
     if (!typingTimerRef.current && typingQueueRef.current.length === 0) {
@@ -348,6 +393,7 @@ export function CompanionChatScreen({
       modeAfterSend?: PanelMode;
     }) => {
       if (isGenerating) return;
+      hasSentDuringHistoryLoadRef.current = true;
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
 
@@ -369,7 +415,8 @@ export function CompanionChatScreen({
       setInput('');
       setMode((current) => modeAfterSend ?? (current === 'emoji' || current === 'actions' ? current : 'keyboard'));
       setIsGenerating(true);
-      scheduleScrollToBottom();
+      isNearBottomRef.current = true;
+      scrollToLatestAfterRender();
       streamingRef.current = '';
       visibleStreamingRef.current = '';
       typingQueueRef.current = [];
@@ -397,7 +444,7 @@ export function CompanionChatScreen({
                   : message,
               ),
             );
-            scheduleScrollToBottom();
+            if (isNearBottomRef.current) scrollToLatestAfterRender();
           },
           onAgentRunProposed: (run) => {
             proposedRun = run;
@@ -432,14 +479,14 @@ export function CompanionChatScreen({
         streamingStore.set('');
         setIsGenerating(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
-        scheduleScrollToBottom();
+        if (isNearBottomRef.current) scrollToLatestAfterRender();
         if (proposedRun?.toolName === 'task.create') setPendingToolRun(proposedRun);
       }
     },
     [
       conversationId,
       isGenerating,
-      scheduleScrollToBottom,
+      scrollToLatestAfterRender,
       startTyping,
       streamingStore,
       waitForTypingDrain,
@@ -458,13 +505,15 @@ export function CompanionChatScreen({
         content: `已创建提醒：${taskTitle}`,
       }]);
       setPendingToolRun(null);
+      isNearBottomRef.current = true;
+      scrollToLatestAfterRender();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (error) {
       Alert.alert('无法创建提醒', getApiErrorMessage(error, '请稍后重试'));
     } finally {
       setResolvingToolRun(false);
     }
-  }, [conversationId, pendingToolRun]);
+  }, [conversationId, pendingToolRun, scrollToLatestAfterRender]);
 
   const cancelToolRun = useCallback(async () => {
     if (!pendingToolRun) return;
@@ -523,8 +572,7 @@ export function CompanionChatScreen({
     if (isGenerating) return;
     setInput((current) => current || '生成一张 ');
     setMode('keyboard');
-    scheduleScrollToBottom();
-  }, [isGenerating, scheduleScrollToBottom]);
+  }, [isGenerating]);
 
   const pickImage = useCallback(async () => {
     const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -630,13 +678,13 @@ export function CompanionChatScreen({
     Keyboard.dismiss();
     setKeyboardHeight(0);
     setMode('idle');
-    scheduleScrollToBottom();
-  }, [keyboardHeight, mode, scheduleScrollToBottom]);
+  }, [keyboardHeight, mode]);
 
   const showKeyboard = useCallback(() => {
     setMode('keyboard');
-    scheduleScrollToBottom();
-  }, [scheduleScrollToBottom]);
+    isNearBottomRef.current = true;
+    scrollToLatestAfterRender();
+  }, [scrollToLatestAfterRender]);
 
   const togglePanel = useCallback((nextMode: PanelMode) => {
     setMode((current) => {
@@ -648,8 +696,7 @@ export function CompanionChatScreen({
       }
       return next;
     });
-    scheduleScrollToBottom();
-  }, [scheduleScrollToBottom]);
+  }, []);
 
   const startRecording = useCallback(async () => {
     if (isGenerating || recorderState.isRecording) return;
@@ -702,16 +749,11 @@ export function CompanionChatScreen({
   }, [appendUserTurn, recorder]);
 
   useEffect(() => {
-    scheduleScrollToBottom(false);
-  }, [messages.length, scheduleScrollToBottom]);
-
-  useEffect(() => {
     return () => {
       if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
       resolveTypingDrain();
-      clearScrollTimers();
     };
-  }, [clearScrollTimers, resolveTypingDrain]);
+  }, [resolveTypingDrain]);
 
   useEffect(() => {
     if (Platform.OS === 'web') return undefined;
@@ -730,7 +772,7 @@ export function CompanionChatScreen({
     const updateKeyboardHeight = (event: { duration?: number; endCoordinates?: { height?: number } }) => {
       updateKeyboardAnimationDuration(event.duration);
       setKeyboardHeight(event.endCoordinates?.height ?? 0);
-      scheduleScrollToBottom();
+      if (isNearBottomRef.current) scrollToLatestAfterRender(false);
     };
     const hideKeyboard = (event: { duration?: number }) => {
       updateKeyboardAnimationDuration(event.duration);
@@ -746,7 +788,7 @@ export function CompanionChatScreen({
       change.remove();
       hide.remove();
     };
-  }, [scheduleScrollToBottom]);
+  }, [scrollToLatestAfterRender]);
 
   const renderItem = useCallback(
     ({ item }: { item: ChatMessage }) => {
@@ -767,26 +809,31 @@ export function CompanionChatScreen({
     [isGenerating, streamingStore],
   );
 
-  useEffect(() => {
-    scheduleScrollToBottom(false);
-  }, [listBottomPadding, scheduleScrollToBottom]);
-
   return (
     <View style={[styles.keyboardView, { backgroundColor: theme.background }]}>
       <SafeAreaView style={styles.safeArea} edges={['left', 'right']}>
         <View style={styles.centered}>
           <FlatList
             ref={listRef}
-            data={messages}
+            data={invertedMessages}
             renderItem={renderItem}
             keyExtractor={(item) => item.id}
             extraData={listBottomPadding}
+            inverted
+            maintainVisibleContentPosition={{
+              minIndexForVisible: 0,
+              autoscrollToTopThreshold: SCROLL_BOTTOM_THRESHOLD,
+            }}
+            initialNumToRender={20}
+            maxToRenderPerBatch={20}
+            windowSize={15}
             keyboardDismissMode="interactive"
             keyboardShouldPersistTaps="handled"
             onTouchStart={dismissInputAccessory}
+            onScroll={onListScroll}
             contentContainerStyle={styles.messageList}
-            ListFooterComponent={<View style={{ height: listBottomPadding }} />}
-            onContentSizeChange={() => scheduleScrollToBottom(false)}
+            ListHeaderComponent={<View style={{ height: listBottomPadding }} />}
+            scrollEventThrottle={16}
             showsVerticalScrollIndicator={false}
           />
         </View>
@@ -1185,8 +1232,7 @@ const styles = StyleSheet.create({
   },
   messageList: {
     flexGrow: 1,
-    justifyContent: 'flex-end',
-    paddingTop: Spacing.four,
+    paddingBottom: Spacing.four,
   },
   footer: {
     position: 'absolute',
