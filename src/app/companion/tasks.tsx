@@ -120,9 +120,11 @@ export default function CompanionTasksScreen() {
     setSaving(true);
     try {
       const next = await updateCompanionProactivePolicy(conversationId, {
-        ...policy,
+        enabled: policy.enabled,
         quietHoursStart: start,
         quietHoursEnd: end,
+        dailyLimit: policy.dailyLimit,
+        minimumIntervalMinutes: policy.minimumIntervalMinutes,
       });
       setPolicy(next);
       Alert.alert('已保存', '主动陪伴将按此频率和静默时间执行。');

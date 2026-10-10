@@ -182,6 +182,8 @@ export type CompanionProactivePolicy = {
   minimumIntervalMinutes: number;
 };
 
+export type UpdateCompanionProactivePolicy = Partial<CompanionProactivePolicy>;
+
 function parseSseEvent(frame: string): SseEvent | null {
   let type = 'message';
   const dataLines: string[] = [];
@@ -298,7 +300,7 @@ export function getCompanionProactivePolicy(conversationId: string) {
 
 export function updateCompanionProactivePolicy(
   conversationId: string,
-  input: Partial<CompanionProactivePolicy>,
+  input: UpdateCompanionProactivePolicy,
 ) {
   return apiJson<CompanionProactivePolicy>(
     `/v1/chats/${encodeURIComponent(conversationId)}/proactive-policy`,
