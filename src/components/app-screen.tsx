@@ -3,7 +3,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { BottomTabInset, MaxContentWidth, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useBottomNavigationInset } from '@/hooks/use-bottom-navigation-inset';
 import { useTheme } from '@/hooks/use-theme';
 
 type AppScreenProps = {
@@ -16,12 +17,13 @@ type AppScreenProps = {
 
 export function AppScreen({ eyebrow, title, description, primary, secondary }: AppScreenProps) {
   const theme = useTheme();
+  const bottomInset = useBottomNavigationInset();
 
   return (
     <ScrollView
       style={[styles.scrollView, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.scrollContent}>
-      <SafeAreaView style={styles.safeArea}>
+      <SafeAreaView style={[styles.safeArea, { paddingBottom: bottomInset }]}>
         <ThemedView style={styles.container}>
           <ThemedView style={styles.header}>
             <ThemedText type="smallBold" themeColor="textSecondary">
@@ -60,7 +62,6 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingHorizontal: Spacing.four,
-    paddingBottom: BottomTabInset + Spacing.four,
   },
   container: {
     width: '100%',

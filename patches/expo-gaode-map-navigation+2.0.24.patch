@@ -1,0 +1,170 @@
+diff --git a/node_modules/expo-gaode-map-navigation/ios/services/IndependentRouteService.swift b/node_modules/expo-gaode-map-navigation/ios/services/IndependentRouteService.swift
+index 6b5387b..4d85f7f 100644
+--- a/node_modules/expo-gaode-map-navigation/ios/services/IndependentRouteService.swift
++++ b/node_modules/expo-gaode-map-navigation/ios/services/IndependentRouteService.swift
+@@ -126,54 +126,27 @@ class IndependentRouteService: NSObject {
+   // MARK: - 独立步行路线规划
+   func independentWalkRoute(options: [String: Any], promise: Promise) {
+     bindWalkManagerDelegate()
+-    guard let to = options["to"] as? [String: Any] else {
+-      promise.reject("INVALID_PARAMS", "to is required")
++    guard let from = options["from"] as? [String: Any],
++          let to = options["to"] as? [String: Any] else {
++      promise.reject("INVALID_PARAMS", "from and to are required")
+       return
+     }
+ 
+-    let from = options["from"] as? [String: Any]
+-    let startPOIInfo = Converters.parseNaviPOIInfo(from)
+-
+-    guard let endPOIInfo = Converters.parseNaviPOIInfo(to) else {
+-      promise.reject("INVALID_COORDS", "Invalid destination coordinates or POI info")
++    guard let start = Converters.parseNaviPoint(from),
++          let end = Converters.parseNaviPoint(to) else {
++      promise.reject("INVALID_COORDS", "Invalid coordinates")
+       return
+     }
+ 
+-    let wayPOIInfos: [AMapNaviPOIInfo]? = {
+-      guard let waypoints = options["waypoints"] as? [[String: Any]] else { return nil }
+-      return Converters.parseNaviPOIInfos(waypoints)
+-    }()
+-
+-    let strategy = resolveTravelStrategy(options: options)
+     let token = independentRouteManager.generateToken()
+-
+-    let success = walkManager?.independentCalculateWalkRoute(
+-      withStart: startPOIInfo,
+-      end: endPOIInfo,
+-      wayPOIInfos: wayPOIInfos,
+-      strategy: strategy,
+-      callback: { [weak self] routeGroup, error in
+-        guard let self else { return }
+-        if let error = error {
+-          promise.reject("CALCULATE_FAILED", error.localizedDescription)
+-          return
+-        }
+-        guard let routeGroup = routeGroup else {
+-          promise.reject("CALCULATE_FAILED", "独立步行算路成功回调未返回 routeGroup")
+-          return
+-        }
+-
+-        self.independentRouteManager.storeRouteGroup(token: token, scene: "walk", routeGroup: routeGroup)
+-        let result = self.convertIndependentTravelResult(
+-          routeGroup: routeGroup,
+-          token: token,
+-          scene: "walk"
+-        )
+-        promise.resolve(result)
+-      }
+-    ) ?? false
++    currentScene = "walk"
++    currentPromise = promise
++    currentToken = token
++    let success = walkManager?.calculateWalkRoute(withStart: [start], end: [end]) ?? false
+ 
+     if !success {
++      currentPromise = nil
++      currentToken = nil
+       promise.reject("CALCULATE_FAILED", "独立步行路线规划启动失败")
+     }
+   }
+@@ -181,54 +154,27 @@ class IndependentRouteService: NSObject {
+   // MARK: - 独立骑行路线规划
+   func independentRideRoute(options: [String: Any], promise: Promise) {
+     bindRideManagerDelegate()
+-    guard let to = options["to"] as? [String: Any] else {
+-      promise.reject("INVALID_PARAMS", "to is required")
++    guard let from = options["from"] as? [String: Any],
++          let to = options["to"] as? [String: Any] else {
++      promise.reject("INVALID_PARAMS", "from and to are required")
+       return
+     }
+ 
+-    let from = options["from"] as? [String: Any]
+-    let startPOIInfo = Converters.parseNaviPOIInfo(from)
+-
+-    guard let endPOIInfo = Converters.parseNaviPOIInfo(to) else {
+-      promise.reject("INVALID_COORDS", "Invalid destination coordinates or POI info")
++    guard let start = Converters.parseNaviPoint(from),
++          let end = Converters.parseNaviPoint(to) else {
++      promise.reject("INVALID_COORDS", "Invalid coordinates")
+       return
+     }
+ 
+-    let wayPOIInfos: [AMapNaviPOIInfo]? = {
+-      guard let waypoints = options["waypoints"] as? [[String: Any]] else { return nil }
+-      return Converters.parseNaviPOIInfos(waypoints)
+-    }()
+-
+-    let strategy = resolveTravelStrategy(options: options)
+     let token = independentRouteManager.generateToken()
+-
+-    let success = rideManager?.independentCalculateRideRoute(
+-      withStart: startPOIInfo,
+-      end: endPOIInfo,
+-      wayPOIInfos: wayPOIInfos ?? [],
+-      strategy: strategy,
+-      callback: { [weak self] routeGroup, error in
+-        guard let self else { return }
+-        if let error = error {
+-          promise.reject("CALCULATE_FAILED", error.localizedDescription)
+-          return
+-        }
+-        guard let routeGroup = routeGroup else {
+-          promise.reject("CALCULATE_FAILED", "独立骑行算路成功回调未返回 routeGroup")
+-          return
+-        }
+-
+-        self.independentRouteManager.storeRouteGroup(token: token, scene: "ride", routeGroup: routeGroup)
+-        let result = self.convertIndependentTravelResult(
+-          routeGroup: routeGroup,
+-          token: token,
+-          scene: "ride"
+-        )
+-        promise.resolve(result)
+-      }
+-    ) ?? false
++    currentScene = "ride"
++    currentPromise = promise
++    currentToken = token
++    let success = rideManager?.calculateRideRoute(withStart: start, end: end) ?? false
+ 
+     if !success {
++      currentPromise = nil
++      currentToken = nil
+       promise.reject("CALCULATE_FAILED", "独立骑行路线规划启动失败")
+     }
+   }
+@@ -530,10 +476,14 @@ extension IndependentRouteService: AMapNaviWalkManagerDelegate {
+         "polyline": extractCoordinates(from: naviRoute)
+       ])
+     }
+-    
++    independentRouteManager.storeSceneRoutes(token: token, scene: "walk", routeIds: [])
+     promise.resolve([
+       "success": true,
++      "independent": true,
+       "token": token,
++      "count": routes.count,
++      "mainPathIndex": 0,
++      "routeIds": [],
+       "routes": routes
+     ])
+   }
+@@ -567,10 +517,14 @@ extension IndependentRouteService: AMapNaviRideManagerDelegate {
+         "polyline": extractCoordinates(from: naviRoute)
+       ])
+     }
+-    
++    independentRouteManager.storeSceneRoutes(token: token, scene: "ride", routeIds: [])
+     promise.resolve([
+       "success": true,
++      "independent": true,
+       "token": token,
++      "count": routes.count,
++      "mainPathIndex": 0,
++      "routeIds": [],
+       "routes": routes
+     ])
+   }
