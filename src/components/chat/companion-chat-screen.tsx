@@ -791,15 +791,6 @@ export function CompanionChatScreen({
           />
         </View>
 
-        {pendingToolRun?.toolName === 'task.create' ? (
-          <ToolConfirmationCard
-            run={pendingToolRun}
-            submitting={resolvingToolRun}
-            onConfirm={() => void confirmToolRun()}
-            onCancel={() => void cancelToolRun()}
-          />
-        ) : null}
-
         <Animated.View
           style={[
             styles.footer,
@@ -810,6 +801,16 @@ export function CompanionChatScreen({
             footerAnimatedStyle,
           ]}
           onLayout={onFooterLayout}>
+          {pendingToolRun?.toolName === 'task.create' ? (
+            <View style={styles.toolCardContainer}>
+              <ToolConfirmationCard
+                run={pendingToolRun}
+                submitting={resolvingToolRun}
+                onConfirm={() => void confirmToolRun()}
+                onCancel={() => void cancelToolRun()}
+              />
+            </View>
+          ) : null}
           <View style={styles.footerContent}>
             <PromptInput
               value={input}
@@ -956,7 +957,7 @@ function ToolConfirmationCard({
     <View style={[styles.toolCard, { backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}>
       <View style={styles.toolHeader}>
         <View style={styles.toolIcon}><SymbolView name={{ ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }} size={16} tintColor="#2878E8" /></View>
-        <View style={styles.toolCopy}><ThemedText type="smallBold">创建提醒</ThemedText><ThemedText type="small" themeColor="textSecondary">需要你的确认后才会安排</ThemedText></View>
+        <View style={styles.toolCopy}><ThemedText type="smallBold">创建提醒</ThemedText><ThemedText type="small" themeColor="textSecondary">确认后入队；到点向已开启推送的真机发送通知</ThemedText></View>
       </View>
       <View style={[styles.toolDetail, { backgroundColor: theme.background }]}><ThemedText type="smallBold">{title}</ThemedText><ThemedText type="small" themeColor="textSecondary">{date}</ThemedText></View>
       <View style={styles.toolActions}>
@@ -1206,6 +1207,11 @@ const styles = StyleSheet.create({
     gap: Spacing.two,
     paddingHorizontal: Spacing.three,
     paddingVertical: Spacing.two,
+  },
+  toolCardContainer: {
+    alignSelf: 'center',
+    maxWidth: MaxContentWidth,
+    width: '100%',
   },
   toolHeader: {
     alignItems: 'center',
