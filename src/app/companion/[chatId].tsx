@@ -5,11 +5,13 @@ import { Pressable } from 'react-native';
 import { CompanionChatScreen } from '@/components/chat';
 import { lockCompanionChatScroll } from '@/components/chat/chat-scroll-lock';
 import { getCompanionChat } from '@/data/companion-chats';
+import { useTheme } from '@/hooks/use-theme';
 
 export default function CompanionChatRoute() {
   const { chatId } = useLocalSearchParams<{ chatId: string }>();
   const router = useRouter();
   const chat = getCompanionChat(chatId ?? 'lumimate');
+  const theme = useTheme();
 
   return (
     <>
@@ -30,11 +32,20 @@ export default function CompanionChatRoute() {
                   params: { conversationId: chat.id, title: chat.name },
                 });
               }}
-              style={{ marginRight: 8 }}>
+              style={{
+                alignItems: 'center',
+                backgroundColor: theme.backgroundElement,
+                borderRadius: 22,
+                height: 44,
+                justifyContent: 'center',
+                marginRight: -4,
+                overflow: 'hidden',
+                width: 44,
+              }}>
               <SymbolView
                 name={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}
                 size={21}
-                tintColor="#2878E8"
+                tintColor={theme.primary}
               />
             </Pressable>
           ),

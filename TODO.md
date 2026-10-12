@@ -105,7 +105,8 @@ assistant 回复完成
 - [ ] 建立工具协议：名称、JSON Schema、权限、超时、重试、审计日志、展示结果。
 - [ ] 地图工具：当前位置、地点搜索、附近搜索、路线规划；路线/导航前向用户确认。
 - [x] `task.create`：创建 `AgentRun`、SSE 确认卡片、确认后入队、执行审计与刷新恢复。
-- [ ] 任务工具：查看、修改、取消定时任务；接入模型结构化 Tool Call。
+- [x] 客户端任务管理：查看、修改、取消定时任务；修改后重新调度 BullMQ job。
+- [ ] 任务工具：接入模型结构化 Tool Call，支持 `task.list`、`task.update`、`task.cancel`。
 - [ ] 图片工具：生图、编辑图片、生成任务状态与结果文件。
 - [ ] 将复杂多步骤请求建模为状态机：`planned → awaiting_confirmation → running → completed | failed | cancelled`。
 - [ ] 所有会改变外部状态的工具必须经用户确认；只读工具可自动调用。

@@ -63,6 +63,10 @@ export type AgentIntent = {
   status: 'AWAITING_CONFIRMATION' | 'SCHEDULED' | 'RUNNING' | 'COMPLETED' | 'FAILED' | 'CANCELLED' | 'EXPIRED';
 };
 
+export type UpdateAgentIntent = Partial<Pick<AgentIntent, 'title' | 'dueAt' | 'timezone'>> & {
+  payload?: Record<string, unknown>;
+};
+
 export type AgentToolRun = {
   id: string;
   toolName: 'task.create' | 'task.cancel' | 'task.list' | string;
@@ -321,6 +325,17 @@ export function confirmAgentIntent(conversationId: string, intentId: string) {
 
 export function getAgentIntents(conversationId: string) {
   return apiJson<AgentIntent[]>(`/v1/chats/${encodeURIComponent(conversationId)}/intents`);
+}
+
+export function updateAgentIntent(conversationId: string, intentId: string, input: UpdateAgentIntent) {
+  return apiJson<AgentIntent>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/intents/${encodeURIComponent(intentId)}`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    },
+  );
 }
 
 export async function cancelAgentIntent(conversationId: string, intentId: string) {

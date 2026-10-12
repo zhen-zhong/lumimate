@@ -134,10 +134,10 @@ export default function CompanionSkillsScreen() {
     <>
       <Stack.Screen options={{ title: '技能中心', headerBackTitle: title, headerBackTitleStyle: { fontSize: 15 } }} />
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['bottom']}>
-        {loading ? <View style={styles.loading}><ActivityIndicator color="#2878E8" /></View> : (
+        {loading ? <View style={styles.loading}><ActivityIndicator color={theme.primary} /></View> : (
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <View style={[styles.notice, { backgroundColor: theme.backgroundElement }]}>
-              <SymbolView name={{ ios: 'lock.shield.fill', android: 'shield', web: 'shield' }} size={18} tintColor="#2878E8" />
+              <SymbolView name={{ ios: 'lock.shield.fill', android: 'shield', web: 'shield' }} size={18} tintColor={theme.primary} />
               <ThemedText type="small" themeColor="textSecondary" style={styles.noticeText}>
                 技能只会注入已审核规则和知识范围；不会执行插件脚本，也不能越过你的工具授权。
               </ThemedText>
@@ -158,12 +158,12 @@ export default function CompanionSkillsScreen() {
               return (
                 <View key={plugin.id} style={[styles.skillCard, { backgroundColor: theme.backgroundElement }]}>
                   <View style={styles.skillHeader}>
-                    <View style={styles.skillIcon}><SymbolView name={skillIcon(plugin.id)} size={19} tintColor="#2878E8" /></View>
+                    <View style={[styles.skillIcon, { backgroundColor: theme.primarySurface }]}><SymbolView name={skillIcon(plugin.id)} size={19} tintColor={theme.primary} /></View>
                     <View style={styles.skillCopy}>
                       <ThemedText type="default">{plugin.displayName}</ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">v{version?.version ?? '—'}</ThemedText>
                     </View>
-                    {saving ? <ActivityIndicator color="#2878E8" /> : <Switch value={enabled} onValueChange={(next) => void setEnabled(plugin, next)} trackColor={{ false: theme.backgroundSelected, true: '#8FC0FA' }} thumbColor={enabled ? '#2878E8' : theme.background} />}
+                    {saving ? <ActivityIndicator color={theme.primary} /> : <Switch value={enabled} onValueChange={(next) => void setEnabled(plugin, next)} trackColor={{ false: theme.backgroundSelected, true: theme.primarySurface }} thumbColor={enabled ? theme.primary : theme.background} />}
                   </View>
                   <ThemedText type="small" themeColor="textSecondary" style={styles.description}>{plugin.description}</ThemedText>
                   {manifest ? <View style={[styles.meta, { backgroundColor: theme.background }]}>
@@ -180,8 +180,8 @@ export default function CompanionSkillsScreen() {
                         disabled={!enabled || saving}
                         value={enabled && pluginMemoryEnabled}
                         onValueChange={(next) => void setMemoryEnabled(plugin, next)}
-                        trackColor={{ false: theme.backgroundSelected, true: '#8FC0FA' }}
-                        thumbColor={enabled && pluginMemoryEnabled ? '#2878E8' : theme.background}
+                        trackColor={{ false: theme.backgroundSelected, true: theme.primarySurface }}
+                        thumbColor={enabled && pluginMemoryEnabled ? theme.primary : theme.background}
                       />
                     </View> : <MetaRow label="记忆" value="不使用长期记忆" />}
                   </View> : null}
@@ -209,7 +209,7 @@ const styles = StyleSheet.create({
   sectionHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.two, paddingHorizontal: Spacing.one },
   skillCard: { borderRadius: 18, gap: Spacing.two, padding: Spacing.three },
   skillHeader: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
-  skillIcon: { alignItems: 'center', backgroundColor: '#EAF2FF', borderRadius: 12, height: 42, justifyContent: 'center', width: 42 },
+  skillIcon: { alignItems: 'center', borderRadius: 12, height: 42, justifyContent: 'center', width: 42 },
   skillCopy: { flex: 1, gap: 2 },
   description: { lineHeight: 20 },
   meta: { borderRadius: 12, gap: Spacing.one, padding: Spacing.two },

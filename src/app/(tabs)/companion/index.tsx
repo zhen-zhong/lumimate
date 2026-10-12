@@ -38,9 +38,9 @@ export default function CompanionListScreen() {
                 })
               }
               style={({ pressed }) => [pressed ? styles.pressed : null]}>
-                <ThemedView type="backgroundElement" style={styles.item}>
-                  <View style={styles.avatar}>
-                    <ThemedText type="smallBold">{chat.name.slice(0, 1)}</ThemedText>
+                <ThemedView type="backgroundElement" style={[styles.item, { borderColor: theme.backgroundSelected }]}>
+                  <View style={[styles.avatar, { backgroundColor: theme.primarySurface }]}>
+                    <ThemedText type="smallBold" style={{ color: theme.primary }}>{chat.name.slice(0, 1)}</ThemedText>
                   </View>
                   <View style={styles.itemBody}>
                     <View style={styles.itemTitleRow}>
@@ -86,6 +86,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.three,
     borderRadius: 12,
+    borderWidth: StyleSheet.hairlineWidth,
     padding: Spacing.three,
   },
   avatar: {
@@ -94,7 +95,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#DDEBFF',
   },
   itemBody: {
     flex: 1,

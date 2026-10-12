@@ -144,7 +144,7 @@ export default function AgentSettingsScreen() {
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['bottom']}>
         {loading ? (
           <View style={styles.loading}>
-            <ActivityIndicator color="#2878E8" />
+            <ActivityIndicator color={theme.primary} />
           </View>
         ) : (
           <View style={styles.page}>
@@ -216,18 +216,18 @@ export default function AgentSettingsScreen() {
                   onPress={() => setModelPickerCapability('chat')}
                   style={({ pressed }) => [styles.advancedToggle, pressed ? styles.pressed : null]}>
                   <View style={styles.fieldTitleRow}>
-                    <View style={styles.advancedIcon}>
-                      <SymbolView name={{ ios: 'cpu', android: 'memory', web: 'memory' }} size={16} tintColor="#2878E8" />
+                    <View style={[styles.advancedIcon, { backgroundColor: theme.primarySurface }]}>
+                      <SymbolView name={{ ios: 'cpu', android: 'memory', web: 'memory' }} size={16} tintColor={theme.primary} />
                     </View>
                     <View style={styles.fieldTitleCopy}>
                       <ThemedText type="default">高级设置</ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">聊天模型与协议</ThemedText>
                     </View>
                     <View style={[styles.selectedModelChip, { backgroundColor: theme.background }]}>
-                      <ThemedText type="smallBold" numberOfLines={1} style={styles.selectedModelText}>
+                      <ThemedText type="smallBold" numberOfLines={1} style={[styles.selectedModelText, { color: theme.primary }]}>
                         {availableModels.find((model) => model.id === settings.modelId)?.label || settings.modelId}
                       </ThemedText>
-                      <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={14} tintColor="#2878E8" />
+                      <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={14} tintColor={theme.primary} />
                     </View>
                   </View>
                 </Pressable>
@@ -240,18 +240,18 @@ export default function AgentSettingsScreen() {
                   onPress={() => setModelPickerCapability('image-generation')}
                   style={({ pressed }) => [styles.advancedToggle, pressed ? styles.pressed : null]}>
                   <View style={styles.fieldTitleRow}>
-                    <View style={styles.advancedIcon}>
-                      <SymbolView name={{ ios: 'photo.badge.plus', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor="#2878E8" />
+                    <View style={[styles.advancedIcon, { backgroundColor: theme.primarySurface }]}>
+                      <SymbolView name={{ ios: 'photo.badge.plus', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor={theme.primary} />
                     </View>
                     <View style={styles.fieldTitleCopy}>
                       <ThemedText type="default">图片创作</ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">生图与编辑图片</ThemedText>
                     </View>
                     <View style={[styles.selectedModelChip, { backgroundColor: theme.background }]}>
-                      <ThemedText type="smallBold" numberOfLines={1} style={styles.selectedModelText}>
+                      <ThemedText type="smallBold" numberOfLines={1} style={[styles.selectedModelText, { color: theme.primary }]}>
                         {availableImageModels.find((model) => model.id === settings.imageModelId)?.label || settings.imageModelId}
                       </ThemedText>
-                      <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={14} tintColor="#2878E8" />
+                      <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={14} tintColor={theme.primary} />
                     </View>
                   </View>
                 </Pressable>
@@ -264,8 +264,8 @@ export default function AgentSettingsScreen() {
 
               <View style={[styles.memoryCard, { backgroundColor: theme.backgroundElement }]}>
                 <View style={styles.memoryTopRow}>
-                  <View style={styles.memoryIcon}>
-                    <SymbolView name={{ ios: 'brain.head.profile', android: 'psychology', web: 'psychology' }} size={21} tintColor="#2878E8" />
+                  <View style={[styles.memoryIcon, { backgroundColor: theme.primarySurface }]}>
+                    <SymbolView name={{ ios: 'brain.head.profile', android: 'psychology', web: 'psychology' }} size={21} tintColor={theme.primary} />
                   </View>
                   <View style={styles.memoryCopy}>
                     <ThemedText type="default">上下文记忆</ThemedText>
@@ -287,7 +287,7 @@ export default function AgentSettingsScreen() {
                       disabled={Number(contextLimit) >= settings.maxContextMessageLimit}
                       onPress={() => changeContextLimit(10)}
                       style={({ pressed }) => [styles.stepperButton, (pressed || Number(contextLimit) >= settings.maxContextMessageLimit) ? styles.pressed : null]}>
-                      <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={15} tintColor="#2878E8" />
+                      <SymbolView name={{ ios: 'plus', android: 'add', web: 'add' }} size={15} tintColor={theme.primary} />
                     </Pressable>
                   </View>
                 </View>
@@ -307,8 +307,8 @@ export default function AgentSettingsScreen() {
                   accessibilityLabel="打开技能中心"
                   onPress={() => router.push({ pathname: '/companion/skills' as never, params: { conversationId, title } })}
                   style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
-                  <View style={styles.fieldIcon}>
-                    <SymbolView name={{ ios: 'puzzlepiece.extension.fill', android: 'extension', web: 'extension' }} size={17} tintColor="#2878E8" />
+                  <View style={[styles.fieldIcon, { backgroundColor: theme.primarySurface }]}>
+                    <SymbolView name={{ ios: 'puzzlepiece.extension.fill', android: 'extension', web: 'extension' }} size={17} tintColor={theme.primary} />
                   </View>
                   <View style={styles.fieldTitleCopy}>
                     <ThemedText type="default">技能中心</ThemedText>
@@ -322,8 +322,8 @@ export default function AgentSettingsScreen() {
                   accessibilityLabel="管理陪伴记忆"
                   onPress={() => router.push({ pathname: '/companion/memory' as never, params: { conversationId, title } })}
                   style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
-                  <View style={styles.fieldIcon}>
-                    <SymbolView name={{ ios: 'brain.head.profile', android: 'psychology', web: 'psychology' }} size={17} tintColor="#2878E8" />
+                  <View style={[styles.fieldIcon, { backgroundColor: theme.primarySurface }]}>
+                    <SymbolView name={{ ios: 'brain.head.profile', android: 'psychology', web: 'psychology' }} size={17} tintColor={theme.primary} />
                   </View>
                   <View style={styles.fieldTitleCopy}>
                     <ThemedText type="default">管理记忆与称呼</ThemedText>
@@ -337,8 +337,8 @@ export default function AgentSettingsScreen() {
                   accessibilityLabel="打开提醒与主动陪伴"
                   onPress={() => router.push({ pathname: '/companion/tasks' as never, params: { conversationId, title } })}
                   style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
-                  <View style={styles.fieldIcon}>
-                    <SymbolView name={{ ios: 'checklist', android: 'checklist', web: 'checklist' }} size={17} tintColor="#2878E8" />
+                  <View style={[styles.fieldIcon, { backgroundColor: theme.primarySurface }]}>
+                    <SymbolView name={{ ios: 'checklist', android: 'checklist', web: 'checklist' }} size={17} tintColor={theme.primary} />
                   </View>
                   <View style={styles.fieldTitleCopy}>
                     <ThemedText type="default">提醒与主动陪伴</ThemedText>
@@ -348,18 +348,19 @@ export default function AgentSettingsScreen() {
                 </Pressable>
                 <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
                 <View style={styles.companionRow}>
-                  <View style={styles.fieldIcon}>
-                    <SymbolView name={{ ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }} size={16} tintColor="#2878E8" />
+                  <View style={[styles.fieldIcon, { backgroundColor: theme.primarySurface }]}>
+                    <SymbolView name={{ ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }} size={16} tintColor={theme.primary} />
                   </View>
                   <View style={styles.fieldTitleCopy}>
                     <ThemedText type="default">主动陪伴</ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">默认关闭；受静默时间和频率限制</ThemedText>
                   </View>
                   <Switch
+                    style={styles.toggle}
                     value={proactivePolicy.enabled}
                     onValueChange={(enabled) => setProactivePolicy((current) => ({ ...current, enabled }))}
-                    trackColor={{ false: theme.backgroundSelected, true: '#8FC0FA' }}
-                    thumbColor={proactivePolicy.enabled ? '#2878E8' : theme.background}
+                    trackColor={{ false: theme.backgroundSelected, true: theme.primarySurface }}
+                    thumbColor={proactivePolicy.enabled ? theme.primary : theme.background}
                   />
                 </View>
               </View>
@@ -371,7 +372,7 @@ export default function AgentSettingsScreen() {
                 accessibilityLabel="保存智能体设置"
                 disabled={saving}
                 onPress={() => void save()}
-                style={({ pressed }) => [styles.saveButton, (pressed || saving) ? styles.pressed : null]}>
+                style={({ pressed }) => [styles.saveButton, { backgroundColor: theme.primary }, (pressed || saving) ? styles.pressed : null]}>
                 {saving ? <ActivityIndicator color="#FFFFFF" /> : <ThemedText style={styles.saveText}>保存智能体设定</ThemedText>}
               </Pressable>
             </View>
@@ -424,17 +425,17 @@ export default function AgentSettingsScreen() {
                           }}
                           style={({ pressed }) => [
                             styles.modelOption,
-                            { backgroundColor: selected ? '#EAF2FF' : theme.backgroundElement },
+                            { backgroundColor: selected ? theme.primarySurface : theme.backgroundElement },
                             pressed ? styles.pressed : null,
                           ]}>
                           <View style={styles.modelBadge}>
-                            <SymbolView name={{ ios: modelPickerCapability === 'image-generation' ? 'photo.fill' : model.protocol === 'anthropic-messages' ? 'text.bubble.fill' : 'bolt.fill', android: modelPickerCapability === 'image-generation' ? 'image' : model.protocol === 'anthropic-messages' ? 'chat' : 'bolt', web: modelPickerCapability === 'image-generation' ? 'image' : model.protocol === 'anthropic-messages' ? 'chat' : 'bolt' }} size={15} tintColor={selected ? '#1769D1' : theme.textSecondary} />
+                            <SymbolView name={{ ios: modelPickerCapability === 'image-generation' ? 'photo.fill' : model.protocol === 'anthropic-messages' ? 'text.bubble.fill' : 'bolt.fill', android: modelPickerCapability === 'image-generation' ? 'image' : model.protocol === 'anthropic-messages' ? 'chat' : 'bolt', web: modelPickerCapability === 'image-generation' ? 'image' : model.protocol === 'anthropic-messages' ? 'chat' : 'bolt' }} size={15} tintColor={selected ? theme.primary : theme.textSecondary} />
                           </View>
                           <View style={styles.modelCopy}>
-                            <ThemedText style={selected ? styles.modelNameSelected : undefined}>{model.label}</ThemedText>
+                            <ThemedText style={selected ? [styles.modelNameSelected, { color: theme.primary }] : undefined}>{model.label}</ThemedText>
                             <ThemedText type="small" themeColor="textSecondary">{model.id}</ThemedText>
                           </View>
-                          {selected ? <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} size={21} tintColor="#2878E8" /> : null}
+                          {selected ? <SymbolView name={{ ios: 'checkmark.circle.fill', android: 'check_circle', web: 'check_circle' }} size={21} tintColor={theme.primary} /> : null}
                         </Pressable>
                       );
                     })}
@@ -457,11 +458,13 @@ function SettingsField({
   hint: string;
   children: React.ReactNode;
 }) {
+  const theme = useTheme();
+
   return (
     <View style={styles.field}>
       <View style={styles.fieldTitleRow}>
-        <View style={styles.fieldIcon}>
-          <SymbolView name={icon} size={16} tintColor="#2878E8" />
+        <View style={[styles.fieldIcon, { backgroundColor: theme.primarySurface }]}>
+          <SymbolView name={icon} size={16} tintColor={theme.primary} />
         </View>
         <View style={styles.fieldTitleCopy}>
           <ThemedText type="default">{label}</ThemedText>
@@ -496,30 +499,31 @@ const styles = StyleSheet.create({
   input: { borderWidth: StyleSheet.hairlineWidth, borderRadius: 12, fontSize: 16, marginRight: Spacing.two, minHeight: 48, paddingHorizontal: Spacing.three },
   textarea: { minHeight: 118, paddingVertical: Spacing.two },
   selectedModelChip: { alignItems: 'center', borderRadius: 11, flexDirection: 'row', gap: 3, maxWidth: 154, minHeight: 34, paddingHorizontal: Spacing.two },
-  selectedModelText: { color: '#1769D1', flexShrink: 1 },
+  selectedModelText: { flexShrink: 1 },
   modalRoot: { flex: 1, justifyContent: 'flex-end' },
   modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8, 16, 32, 0.42)' },
   modelSheet: { borderTopLeftRadius: 28, borderTopRightRadius: 28, maxHeight: '78%', paddingTop: Spacing.two },
   sheetHandle: { alignSelf: 'center', borderRadius: 2, height: 4, width: 38 },
   sheetHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', paddingHorizontal: Spacing.three, paddingTop: Spacing.three },
-  closeButton: { alignItems: 'center', borderRadius: 18, height: 36, justifyContent: 'center', width: 36 },
+  closeButton: { alignItems: 'center', borderRadius: 22, height: 44, justifyContent: 'center', width: 44 },
   sheetContent: { gap: Spacing.three, padding: Spacing.three, paddingBottom: 44 },
   modelGroup: { gap: Spacing.one },
   modelOption: { alignItems: 'center', borderRadius: 16, flexDirection: 'row', gap: Spacing.two, minHeight: 64, paddingHorizontal: Spacing.two },
   modelBadge: { alignItems: 'center', backgroundColor: 'rgba(40,120,232,0.1)', borderRadius: 12, height: 38, justifyContent: 'center', width: 38 },
   modelCopy: { flex: 1, gap: 2 },
-  modelNameSelected: { color: '#1769D1', fontWeight: '700' },
+  modelNameSelected: { fontWeight: '700' },
   memoryCard: { borderRadius: 18, padding: Spacing.three },
   memoryTopRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   memoryIcon: { alignItems: 'center', backgroundColor: '#EAF2FF', borderRadius: 12, height: 42, justifyContent: 'center', width: 42 },
   memoryCopy: { flex: 1, gap: 1, minWidth: 0 },
   limitStepper: { alignItems: 'center', borderRadius: 12, flexDirection: 'row', height: 42, paddingHorizontal: Spacing.one },
-  stepperButton: { alignItems: 'center', height: 34, justifyContent: 'center', width: 28 },
+  stepperButton: { alignItems: 'center', height: 44, justifyContent: 'center', width: 36 },
   limitValue: { fontSize: 15, fontWeight: '700', minWidth: 46, textAlign: 'center' },
   memoryHint: { lineHeight: 18, paddingHorizontal: Spacing.one },
   companionRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minHeight: 66, paddingVertical: Spacing.two },
+  toggle: { marginTop: Spacing.one },
   saveBar: { borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.three, paddingTop: Spacing.two, paddingBottom: Spacing.three },
-  saveButton: { alignItems: 'center', backgroundColor: '#2878E8', borderRadius: 15, minHeight: 52, justifyContent: 'center' },
+  saveButton: { alignItems: 'center', borderRadius: 15, minHeight: 52, justifyContent: 'center' },
   saveText: { color: '#FFFFFF', fontSize: 16, fontWeight: '700' },
   pressed: { opacity: 0.7 },
 });

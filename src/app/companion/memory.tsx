@@ -154,12 +154,12 @@ export default function CompanionMemoryScreen() {
       <Stack.Screen options={{ title: '陪伴记忆', headerBackTitle: title, headerBackTitleStyle: { fontSize: 15 } }} />
       <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]} edges={['bottom']}>
         {loading ? (
-          <View style={styles.loading}><ActivityIndicator color="#2878E8" /></View>
+          <View style={styles.loading}><ActivityIndicator color={theme.primary} /></View>
         ) : (
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
             <View style={[styles.notice, { backgroundColor: theme.backgroundElement }]}>
-              <View style={styles.noticeIcon}>
-                <SymbolView name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={15} tintColor="#2878E8" />
+              <View style={[styles.noticeIcon, { backgroundColor: theme.primarySurface }]}>
+                <SymbolView name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={15} tintColor={theme.primary} />
               </View>
               <ThemedText type="small" themeColor="textSecondary" style={styles.noticeText}>
                 候选内容不会自动写入长期记忆。确认后，AI 只会在相关对话中参考它。
@@ -173,8 +173,8 @@ export default function CompanionMemoryScreen() {
               <ProfileInput label="你们的关系" value={relationship.relationshipSummary ?? ''} onChangeText={(relationshipSummary) => setRelationship((current) => ({ ...current, relationshipSummary }))} placeholder="例如：可靠的日常陪伴者" theme={theme} />
               <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
               <ProfileInput label="沟通偏好" value={relationship.communicationStyle ?? ''} onChangeText={(communicationStyle) => setRelationship((current) => ({ ...current, communicationStyle }))} placeholder="例如：少说教，多给具体建议" theme={theme} />
-              <Pressable onPress={() => void saveRelationship()} disabled={savingRelationship} style={({ pressed }) => [styles.saveProfile, pressed || savingRelationship ? styles.pressed : null]}>
-                {savingRelationship ? <ActivityIndicator color="#2878E8" /> : <ThemedText type="smallBold" style={styles.saveProfileText}>保存资料</ThemedText>}
+              <Pressable accessibilityRole="button" accessibilityLabel="保存陪伴资料" onPress={() => void saveRelationship()} disabled={savingRelationship} style={({ pressed }) => [styles.saveProfile, pressed || savingRelationship ? styles.pressed : null]}>
+                {savingRelationship ? <ActivityIndicator color={theme.primary} /> : <ThemedText type="smallBold" style={[styles.saveProfileText, { color: theme.primary }]}>保存资料</ThemedText>}
               </Pressable>
             </View>
 
@@ -208,8 +208,8 @@ export default function CompanionMemoryScreen() {
               style={[styles.editorInput, { color: theme.text, backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}
             />
             <View style={styles.modalActions}>
-              <Pressable onPress={() => setEditing(null)} style={[styles.cancelButton, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">取消</ThemedText></Pressable>
-              <Pressable disabled={!draftContent.trim() || savingMemory} onPress={() => void saveMemory()} style={({ pressed }) => [styles.confirmButton, pressed || savingMemory ? styles.pressed : null]}>
+              <Pressable accessibilityRole="button" accessibilityLabel="取消编辑记忆" onPress={() => setEditing(null)} style={[styles.cancelButton, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">取消</ThemedText></Pressable>
+              <Pressable accessibilityRole="button" accessibilityLabel="保存并确认记忆" disabled={!draftContent.trim() || savingMemory} onPress={() => void saveMemory()} style={({ pressed }) => [styles.confirmButton, { backgroundColor: theme.primary }, pressed || savingMemory ? styles.pressed : null]}>
                 {savingMemory ? <ActivityIndicator color="#FFFFFF" /> : <ThemedText type="smallBold" style={styles.confirmText}>保存并确认</ThemedText>}
               </Pressable>
             </View>
@@ -231,12 +231,12 @@ function ProfileInput({ label, value, onChangeText, placeholder, theme }: { labe
 function MemoryCard({ memory, theme, onConfirm, onEdit, onRemove }: { memory: CompanionMemory; theme: ReturnType<typeof useTheme>; onConfirm?: () => void; onEdit: () => void; onRemove: () => void }) {
   return (
     <View style={[styles.memoryCard, { backgroundColor: theme.backgroundElement }]}>
-      <View style={styles.memoryHeader}><View style={styles.categoryChip}><ThemedText type="smallBold" style={styles.categoryText}>{CATEGORY_LABEL[memory.category]}</ThemedText></View><ThemedText type="small" themeColor="textSecondary">{new Date(memory.updatedAt).toLocaleDateString('zh-CN')}</ThemedText></View>
+      <View style={styles.memoryHeader}><View style={[styles.categoryChip, { backgroundColor: theme.primarySurface }]}><ThemedText type="smallBold" style={[styles.categoryText, { color: theme.primary }]}>{CATEGORY_LABEL[memory.category]}</ThemedText></View><ThemedText type="small" themeColor="textSecondary">{new Date(memory.updatedAt).toLocaleDateString('zh-CN')}</ThemedText></View>
       <ThemedText style={styles.memoryContent}>{memory.content}</ThemedText>
       <View style={styles.memoryActions}>
-        {onConfirm ? <Pressable onPress={onConfirm} style={styles.primaryAction}><ThemedText type="smallBold" style={styles.primaryActionText}>确认</ThemedText></Pressable> : null}
-        <Pressable onPress={onEdit} style={[styles.secondaryAction, { backgroundColor: theme.background }]}><ThemedText type="smallBold">编辑</ThemedText></Pressable>
-        <Pressable accessibilityLabel="删除记忆" onPress={onRemove} style={styles.iconAction}><SymbolView name={{ ios: 'trash', android: 'delete_outline', web: 'delete_outline' }} size={17} tintColor="#D95C5C" /></Pressable>
+        {onConfirm ? <Pressable accessibilityRole="button" accessibilityLabel="确认记忆" onPress={onConfirm} style={[styles.primaryAction, { backgroundColor: theme.primary }]}><ThemedText type="smallBold" style={styles.primaryActionText}>确认</ThemedText></Pressable> : null}
+        <Pressable accessibilityRole="button" accessibilityLabel="编辑记忆" onPress={onEdit} style={[styles.secondaryAction, { backgroundColor: theme.background }]}><ThemedText type="smallBold">编辑</ThemedText></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="删除记忆" onPress={onRemove} style={styles.iconAction}><SymbolView name={{ ios: 'trash', android: 'delete_outline', web: 'delete_outline' }} size={17} tintColor={theme.danger} /></Pressable>
       </View>
     </View>
   );
@@ -251,7 +251,7 @@ const styles = StyleSheet.create({
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', gap: Spacing.two, padding: Spacing.three, paddingBottom: 40 },
   notice: { alignItems: 'flex-start', borderRadius: 14, flexDirection: 'row', gap: Spacing.two, padding: Spacing.two },
-  noticeIcon: { alignItems: 'center', backgroundColor: '#EAF2FF', borderRadius: 10, height: 30, justifyContent: 'center', width: 30 },
+  noticeIcon: { alignItems: 'center', borderRadius: 10, height: 30, justifyContent: 'center', width: 30 },
   noticeText: { flex: 1, lineHeight: 19, paddingTop: 4 },
   sectionTitle: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.two, paddingHorizontal: Spacing.one },
   card: { borderRadius: 18, overflow: 'hidden', paddingHorizontal: Spacing.three },
@@ -259,17 +259,17 @@ const styles = StyleSheet.create({
   profileTextInput: { fontSize: 16, minHeight: 30, padding: 0 },
   divider: { height: StyleSheet.hairlineWidth },
   saveProfile: { alignSelf: 'flex-end', marginBottom: Spacing.two, marginTop: Spacing.one, paddingHorizontal: Spacing.one },
-  saveProfileText: { color: '#2878E8' },
+  saveProfileText: {},
   memoryCard: { borderRadius: 18, gap: Spacing.two, padding: Spacing.three },
   memoryHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
-  categoryChip: { backgroundColor: '#EAF2FF', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
-  categoryText: { color: '#1769D1', fontSize: 12 },
+  categoryChip: { borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
+  categoryText: { fontSize: 12 },
   memoryContent: { fontSize: 16, lineHeight: 23 },
   memoryActions: { alignItems: 'center', flexDirection: 'row', gap: Spacing.one, justifyContent: 'flex-end' },
-  primaryAction: { backgroundColor: '#2878E8', borderRadius: 9, minHeight: 34, justifyContent: 'center', paddingHorizontal: Spacing.two },
+  primaryAction: { alignItems: 'center', borderRadius: 10, minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.two },
   primaryActionText: { color: '#FFFFFF' },
-  secondaryAction: { borderRadius: 9, minHeight: 34, justifyContent: 'center', paddingHorizontal: Spacing.two },
-  iconAction: { alignItems: 'center', height: 34, justifyContent: 'center', width: 34 },
+  secondaryAction: { alignItems: 'center', borderRadius: 10, minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.two },
+  iconAction: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   emptyCard: { borderRadius: 18, padding: Spacing.three },
   emptyText: { lineHeight: 20 },
   modalRoot: { alignItems: 'center', flex: 1, justifyContent: 'center', padding: Spacing.three },
@@ -277,8 +277,8 @@ const styles = StyleSheet.create({
   editor: { borderRadius: 22, gap: Spacing.two, maxWidth: 480, padding: Spacing.three, width: '100%' },
   editorInput: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, fontSize: 16, minHeight: 130, padding: Spacing.two, textAlignVertical: 'top' },
   modalActions: { flexDirection: 'row', gap: Spacing.two, justifyContent: 'flex-end' },
-  cancelButton: { alignItems: 'center', borderRadius: 11, height: 42, justifyContent: 'center', paddingHorizontal: Spacing.three },
-  confirmButton: { alignItems: 'center', backgroundColor: '#2878E8', borderRadius: 11, height: 42, justifyContent: 'center', minWidth: 106, paddingHorizontal: Spacing.two },
+  cancelButton: { alignItems: 'center', borderRadius: 11, minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.three },
+  confirmButton: { alignItems: 'center', borderRadius: 11, minHeight: 44, justifyContent: 'center', minWidth: 106, paddingHorizontal: Spacing.two },
   confirmText: { color: '#FFFFFF' },
   pressed: { opacity: 0.68 },
 });

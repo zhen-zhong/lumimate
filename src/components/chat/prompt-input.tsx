@@ -12,7 +12,7 @@ const TEXT_INPUT_VERTICAL_PADDING = (MIN_TEXT_INPUT_HEIGHT - TEXT_INPUT_LINE_HEI
 const MAX_TEXT_INPUT_LINES = 10;
 const MAX_TEXT_INPUT_HEIGHT =
   TEXT_INPUT_LINE_HEIGHT * MAX_TEXT_INPUT_LINES + TEXT_INPUT_VERTICAL_PADDING * 2;
-const TEXT_INPUT_RIGHT_INSET = 38;
+const TEXT_INPUT_RIGHT_INSET = 46;
 
 export type PromptInputMode = 'idle' | 'keyboard' | 'voice' | 'emoji' | 'actions';
 
@@ -191,7 +191,7 @@ export function PromptInput({
           onPress={onSubmit}
           style={({ pressed }) => [
             styles.sendButton,
-            { backgroundColor: theme.text },
+            { backgroundColor: theme.primary },
             pressed ? styles.pressed : null,
             submitting ? styles.disabled : null,
           ]}>
@@ -203,7 +203,7 @@ export function PromptInput({
             <SymbolView
               name={{ ios: 'arrow.up', android: 'arrow_upward', web: 'arrow_upward' }}
               size={18}
-              tintColor={theme.background}
+              tintColor="#FFFFFF"
             />
           )}
         </Pressable>
@@ -256,10 +256,10 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
-    minHeight: 52,
-    paddingHorizontal: 12,
-    paddingVertical: 7,
+    gap: Spacing.one,
+    minHeight: 58,
+    paddingHorizontal: Spacing.two,
+    paddingVertical: Spacing.two,
   },
   inputWrap: {
     flex: 1,
@@ -270,7 +270,7 @@ const styles = StyleSheet.create({
   textInputShell: {
     minHeight: MIN_TEXT_INPUT_HEIGHT,
     maxHeight: MAX_TEXT_INPUT_HEIGHT,
-    borderRadius: 4,
+    borderRadius: 20,
     justifyContent: 'center',
   },
   input: {
@@ -301,8 +301,8 @@ const styles = StyleSheet.create({
     right: Spacing.two,
   },
   voiceInput: {
-    minHeight: 40,
-    borderRadius: 4,
+    minHeight: 44,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: Spacing.three,
@@ -311,15 +311,15 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   iconButton: {
-    width: 34,
-    height: 40,
+    width: 44,
+    height: 44,
     alignItems: 'center',
     justifyContent: 'center',
   },
   sendButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
   },
