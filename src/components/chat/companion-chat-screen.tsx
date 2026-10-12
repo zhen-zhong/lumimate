@@ -455,8 +455,14 @@ export function CompanionChatScreen({
         });
       } catch (error) {
         const errorMessage = getApiErrorMessage(error, '聊天服务暂时不可用');
-        streamingRef.current = streamingRef.current || `抱歉，${errorMessage}`;
-        if (!visibleStreamingRef.current) {
+        const replacePendingImageStatus = streamingRef.current === '正在生成图片…';
+        if (replacePendingImageStatus || !streamingRef.current) {
+          streamingRef.current = `抱歉，${errorMessage}`;
+        }
+        if (replacePendingImageStatus || !visibleStreamingRef.current) {
+          typingQueueRef.current = [];
+          visibleStreamingRef.current = '';
+          streamingStore.set('');
           typingQueueRef.current.push(...Array.from(streamingRef.current));
           startTyping();
         }
