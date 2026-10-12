@@ -209,6 +209,7 @@ export function CompanionChatScreen({
   const [mode, setMode] = useState<PanelMode>('keyboard');
   const [pendingImage, setPendingImage] = useState<PendingImage | null>(null);
   const [pendingImageSelected, setPendingImageSelected] = useState(true);
+  const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [locationModalVisible, setLocationModalVisible] = useState(false);
   const [locationLoading, setLocationLoading] = useState(false);
   const [locationCandidates, setLocationCandidates] = useState<LocationCandidate[]>([]);
@@ -423,6 +424,7 @@ export function CompanionChatScreen({
       streamingStore.set('');
       let aiInfo: ChatMessageAiInfo | undefined;
       let proposedRun: AgentToolRun | undefined;
+      let generatedImage = false;
 
       try {
         await streamChatMessage({
@@ -434,16 +436,27 @@ export function CompanionChatScreen({
             typingQueueRef.current.push(...Array.from(delta));
             startTyping();
           },
-          onImageGenerated: (generatedImages, action) => {
-            const imageContent = action === 'edit' ? '已完成图片编辑。' : '已为你生成图片。';
-            streamingRef.current = imageContent;
+          onImageGenerated: (generatedImages) => {
+            generatedImage = true;
+            streamingRef.current = '';
+            visibleStreamingRef.current = '';
+            typingQueueRef.current = [];
+            streamingStore.set('');
             setMessages((current) =>
               current.map((message) =>
                 message.id === assistantMessage.id
-                  ? { ...message, content: imageContent, imageUri: generatedImages[0]?.url }
+                  ? { ...message, content: '', imageUri: generatedImages[0]?.url }
                   : message,
               ),
             );
+            if (isNearBottomRef.current) scrollToLatestAfterRender();
+          },
+          onImageCaption: ({ messageId, content: caption, info }) => {
+            if (!caption.trim()) return;
+            setMessages((current) => [
+              ...current,
+              { id: messageId, role: 'assistant', content: caption, aiInfo: info },
+            ]);
             if (isNearBottomRef.current) scrollToLatestAfterRender();
           },
           onAgentRunProposed: (run) => {
@@ -469,7 +482,7 @@ export function CompanionChatScreen({
       } finally {
         await waitForTypingDrain();
 
-        const finalContent = streamingRef.current || '抱歉，聊天服务未返回内容，请重试。';
+        const finalContent = generatedImage ? '' : streamingRef.current || '抱歉，聊天服务未返回内容，请重试。';
         setMessages((current) =>
           current.map((message) =>
             message.id === assistantMessage.id
@@ -798,7 +811,7 @@ export function CompanionChatScreen({
 
   const renderItem = useCallback(
     ({ item }: { item: ChatMessage }) => {
-      if (isGenerating && item.role === 'assistant' && item.content === '') {
+      if (isGenerating && item.role === 'assistant' && item.content === '' && !item.imageUri) {
         return <StreamingBubble store={streamingStore} />;
       }
 
@@ -806,6 +819,7 @@ export function CompanionChatScreen({
         <ChatMessageBubble
           role={item.role}
           imageUri={item.imageUri}
+          onImagePress={item.imageUri ? () => setPreviewImageUri(item.imageUri!) : undefined}
           audioUri={item.audioUri}
           audioDuration={item.audioDuration}>
           {item.content}
@@ -977,6 +991,7 @@ export function CompanionChatScreen({
         onClose={() => setPendingImage(null)}
         onSend={sendPendingImage}
       />
+      <GeneratedImagePreviewModal imageUri={previewImageUri} onClose={() => setPreviewImageUri(null)} />
       <LocationPickerModal
         visible={locationModalVisible}
         loading={locationLoading}
@@ -987,6 +1002,21 @@ export function CompanionChatScreen({
         onSend={sendSelectedLocation}
       />
     </View>
+  );
+}
+
+function GeneratedImagePreviewModal({ imageUri, onClose }: { imageUri: string | null; onClose: () => void }) {
+  const insets = useSafeAreaInsets();
+
+  return (
+    <Modal visible={Boolean(imageUri)} transparent animationType="fade" onRequestClose={onClose}>
+      <View style={[styles.generatedImagePreview, { paddingTop: insets.top + Spacing.two, paddingBottom: insets.bottom + Spacing.two }]}>
+        <Pressable accessibilityRole="button" accessibilityLabel="关闭图片预览" onPress={onClose} style={styles.generatedImagePreviewClose}>
+          <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} size={22} tintColor="#FFFFFF" />
+        </Pressable>
+        {imageUri ? <Image source={{ uri: imageUri }} style={styles.generatedImagePreviewImage} resizeMode="contain" /> : null}
+      </View>
+    </Modal>
   );
 }
 
@@ -1223,6 +1253,27 @@ function ActionTile({
 }
 
 const styles = StyleSheet.create({
+  generatedImagePreview: {
+    backgroundColor: '#000000',
+    flex: 1,
+    justifyContent: 'center',
+  },
+  generatedImagePreviewClose: {
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    borderRadius: 20,
+    height: 40,
+    justifyContent: 'center',
+    position: 'absolute',
+    right: Spacing.three,
+    top: Spacing.five,
+    width: 40,
+    zIndex: 1,
+  },
+  generatedImagePreviewImage: {
+    flex: 1,
+    width: '100%',
+  },
   keyboardView: {
     flex: 1,
   },

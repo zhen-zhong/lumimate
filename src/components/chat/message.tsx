@@ -13,6 +13,7 @@ type MessageProps = {
   imageUri?: string;
   audioUri?: string;
   audioDuration?: number;
+  onImagePress?: () => void;
   streaming?: boolean;
 };
 
@@ -22,6 +23,7 @@ export function ChatMessageBubble({
   imageUri,
   audioUri,
   audioDuration,
+  onImagePress,
   streaming,
 }: MessageProps) {
   const theme = useTheme();
@@ -40,7 +42,15 @@ export function ChatMessageBubble({
           isUser ? styles.userBubble : styles.assistantBubble,
           { borderColor: theme.backgroundSelected },
         ]}>
-        {imageUri ? <Image source={{ uri: imageUri }} style={styles.messageImage} /> : null}
+        {imageUri ? (
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="预览图片"
+            onPress={onImagePress}
+            disabled={!onImagePress}>
+            <Image source={{ uri: imageUri }} style={styles.messageImage} />
+          </Pressable>
+        ) : null}
         {audioUri ? (
           <VoiceMessage uri={audioUri} duration={audioDuration} isUser={isUser} />
         ) : null}

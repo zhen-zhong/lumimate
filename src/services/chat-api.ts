@@ -55,6 +55,7 @@ export type StreamChatMessageOptions = {
   attachments?: ChatImageAttachment[];
   onDelta: (delta: string) => void;
   onImageGenerated?: (images: ChatImageAttachment[], action?: 'generate' | 'edit') => void;
+  onImageCaption?: (caption: { messageId: string; content: string; info?: ChatMessageAiInfo }) => void;
   onAgentRunProposed?: (run: AgentToolRun) => void;
   onCompleted?: (info: ChatMessageAiInfo) => void;
 };
@@ -431,6 +432,7 @@ export async function streamChatMessage({
   attachments,
   onDelta,
   onImageGenerated,
+  onImageCaption,
   onAgentRunProposed,
   onCompleted,
 }: StreamChatMessageOptions) {
@@ -490,6 +492,25 @@ export async function streamChatMessage({
             ? event.data.action
             : undefined;
           if (images.length) onImageGenerated?.(images, action);
+        }
+        if (event.type === 'image.caption' && typeof event.data.messageId === 'string' && typeof event.data.content === 'string') {
+          const model = event.data.model;
+          const usage = event.data.usage;
+          const metadata = model && typeof model === 'object' ? model as Record<string, unknown> : undefined;
+          const tokens = usage && typeof usage === 'object' ? usage as Record<string, unknown> : undefined;
+          const info = metadata &&
+            typeof metadata.modelId === 'string' && typeof metadata.modelLabel === 'string' &&
+            typeof metadata.provider === 'string' && typeof metadata.protocol === 'string'
+            ? {
+                modelId: metadata.modelId,
+                modelLabel: metadata.modelLabel,
+                provider: metadata.provider,
+                protocol: metadata.protocol,
+                inputTokens: typeof tokens?.inputTokens === 'number' ? tokens.inputTokens : undefined,
+                outputTokens: typeof tokens?.outputTokens === 'number' ? tokens.outputTokens : undefined,
+              }
+            : undefined;
+          onImageCaption?.({ messageId: event.data.messageId, content: event.data.content, info });
         }
         if (event.type === 'agent.run.proposed' && event.data.run && typeof event.data.run === 'object') {
           const run = event.data.run as Record<string, unknown>;
