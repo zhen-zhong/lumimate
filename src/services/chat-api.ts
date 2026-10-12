@@ -1,4 +1,4 @@
-import { apiFetch, apiJson, assertApiResponse } from '@/services/http';
+import { apiFetch, apiJson, assertApiResponse, getApiBaseUrl } from '@/services/http';
 
 type SseEvent = {
   type: string;
@@ -9,6 +9,11 @@ export type ChatImageAttachment = {
   url: string;
   mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
 };
+
+function resolveImageUrl(url: string) {
+  if (/^(?:https?:|data:)/i.test(url)) return url;
+  return url.startsWith('/') ? `${getApiBaseUrl()}${url}` : url;
+}
 
 export type ChatModelOption = {
   id: string;
@@ -228,8 +233,17 @@ export function getAvailableImageModels() {
   return apiJson<ImageModelOption[]>('/v1/ai/models?capability=image-generation');
 }
 
-export function getChatHistory(conversationId: string) {
-  return apiJson<ChatHistoryMessage[]>(`/v1/chats/${encodeURIComponent(conversationId)}/messages`);
+export async function getChatHistory(conversationId: string) {
+  const history = await apiJson<ChatHistoryMessage[]>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/messages`,
+  );
+  return history.map((message) => ({
+    ...message,
+    attachments: message.attachments.map((attachment) => ({
+      ...attachment,
+      url: resolveImageUrl(attachment.url),
+    })),
+  }));
 }
 
 export async function updateChatAgentSettings(
@@ -461,14 +475,17 @@ export async function streamChatMessage({
           onDelta(event.data.delta);
         }
         if (event.type === 'image.generated' && Array.isArray(event.data.images)) {
-          const images = event.data.images.filter(
-            (image): image is ChatImageAttachment =>
-              image !== null && typeof image === 'object' &&
-              typeof (image as ChatImageAttachment).url === 'string' &&
-              ['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(
+          const images = event.data.images.flatMap((image): ChatImageAttachment[] => {
+            if (
+              image === null || typeof image !== 'object' ||
+              typeof (image as ChatImageAttachment).url !== 'string' ||
+              !['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(
                 (image as ChatImageAttachment).mimeType,
-              ),
-          );
+              )
+            ) return [];
+            const attachment = image as ChatImageAttachment;
+            return [{ ...attachment, url: resolveImageUrl(attachment.url) }];
+          });
           const action = event.data.action === 'generate' || event.data.action === 'edit'
             ? event.data.action
             : undefined;
