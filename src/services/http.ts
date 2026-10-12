@@ -1,6 +1,8 @@
 import { fetch } from 'expo/fetch';
 import { Platform } from 'react-native';
 
+import { ensureApiAccessToken } from '@/services/api-auth';
+
 const DEFAULT_TIMEOUT_MS = 15_000;
 
 type ApiErrorOptions = {
@@ -43,9 +45,10 @@ function getRequestUrl(path: string) {
   return `${getApiBaseUrl()}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
-function getHeaders(input?: HeadersInit) {
+async function getHeaders(input?: HeadersInit) {
   const headers = new Headers(input);
   if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+  if (!headers.has('Authorization')) headers.set('Authorization', `Bearer ${await ensureApiAccessToken()}`);
   return headers;
 }
 
@@ -65,10 +68,11 @@ function getErrorMessage(data: unknown, fallback: string) {
 
 export async function apiFetch(path: string, options: ApiRequestOptions = {}) {
   const { timeoutMs = DEFAULT_TIMEOUT_MS, signal, headers, ...init } = options;
+  const requestHeaders = await getHeaders(headers);
   // iOS 原生 `expo/fetch` 在 AbortController 超时时会抛出 ExpoModulesCore Promise timeout，
   // 无法区分网络慢与主动取消。原生请求交给系统网络栈；Web 仍保留超时保护。
   if (timeoutMs <= 0 || Platform.OS !== 'web') {
-    return fetch(getRequestUrl(path), { ...init, headers: getHeaders(headers), signal });
+    return fetch(getRequestUrl(path), { ...init, headers: requestHeaders, signal });
   }
 
   const controller = new AbortController();
@@ -80,7 +84,7 @@ export async function apiFetch(path: string, options: ApiRequestOptions = {}) {
   try {
     return await fetch(getRequestUrl(path), {
       ...init,
-      headers: getHeaders(headers),
+      headers: requestHeaders,
       signal: controller.signal,
     });
   } catch (error) {

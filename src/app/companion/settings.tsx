@@ -37,6 +37,7 @@ const FALLBACK_SETTINGS: ChatAgentSettings = {
   responseStyle: '温和、简洁',
   modelId: 'deepseek-flash',
   imageModelId: 'gpt-image-2.5-flare',
+  imageUseContext: true,
   contextMessageLimit: 100,
   maxContextMessageLimit: 200,
 };
@@ -116,6 +117,7 @@ export default function AgentSettingsScreen() {
         responseStyle: settings.responseStyle.trim() || FALLBACK_SETTINGS.responseStyle,
         modelId: settings.modelId,
         imageModelId: settings.imageModelId,
+        imageUseContext: settings.imageUseContext,
         contextMessageLimit: parsedLimit,
       });
       const nextPolicy = await updateCompanionProactivePolicy(conversationId, {
@@ -255,6 +257,27 @@ export default function AgentSettingsScreen() {
                     </View>
                   </View>
                 </Pressable>
+
+                <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+
+                <View style={styles.companionRow}>
+                  <View style={[styles.fieldIcon, { backgroundColor: theme.primarySurface }]}>
+                    <SymbolView name={{ ios: 'text.bubble.fill', android: 'forum', web: 'forum' }} size={16} tintColor={theme.primary} />
+                  </View>
+                  <View style={styles.fieldTitleCopy}>
+                    <ThemedText type="default">生图使用上下文</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">
+                      {settings.imageUseContext ? '参考角色档案与最近对话' : '仅依据当前这句话生成'}
+                    </ThemedText>
+                  </View>
+                  <Switch
+                    accessibilityLabel="生图使用上下文"
+                    value={settings.imageUseContext}
+                    onValueChange={(imageUseContext) => setSettings((current) => ({ ...current, imageUseContext }))}
+                    trackColor={{ false: theme.backgroundSelected, true: theme.primarySurface }}
+                    thumbColor={settings.imageUseContext ? theme.primary : theme.background}
+                  />
+                </View>
               </View>
 
               <View style={styles.sectionHeader}>

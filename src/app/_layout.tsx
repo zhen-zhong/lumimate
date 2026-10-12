@@ -1,10 +1,11 @@
 import { DarkTheme, DefaultTheme, router, Stack, ThemeProvider } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { Platform, useColorScheme } from 'react-native';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
+import { ensureApiAccessToken } from '@/services/api-auth';
 
 SplashScreen.preventAutoHideAsync();
 
@@ -28,17 +29,23 @@ function usePushNotificationNavigation() {
 
 export default function RootLayout() {
   const colorScheme = useColorScheme();
+  const [authReady, setAuthReady] = useState(false);
   usePushNotificationNavigation();
+  useEffect(() => {
+    void ensureApiAccessToken().finally(() => setAuthReady(true));
+  }, []);
   return (
     <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
       <AnimatedSplashOverlay />
-      <Stack>
-        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-        <Stack.Screen name="companion/[chatId]" />
-        <Stack.Screen name="companion/memory" />
-        <Stack.Screen name="companion/tasks" />
-        <Stack.Screen name="companion/skills" />
-      </Stack>
+      {authReady ? (
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="companion/[chatId]" />
+          <Stack.Screen name="companion/memory" />
+          <Stack.Screen name="companion/tasks" />
+          <Stack.Screen name="companion/skills" />
+        </Stack>
+      ) : null}
     </ThemeProvider>
   );
 }

@@ -57,11 +57,13 @@ import {
   getChatHistory,
   getAgentToolRuns,
   streamChatMessage,
+  uploadChatMedia,
   type AgentToolRun,
   type ChatImageAttachment,
   type ChatMessageAiInfo,
 } from '@/services/chat-api';
 import { getApiErrorMessage } from '@/services/http';
+import { getAuthenticatedMediaSource } from '@/services/api-auth';
 import { readCachedChatHistory, writeCachedChatHistory } from '@/services/chat-history-cache';
 
 const STREAMING_CHARACTER_INTERVAL_MS = 18;
@@ -70,7 +72,6 @@ const KEYBOARD_UNDERLAY = Platform.OS === 'ios' ? 10 : 0;
 const KEYBOARD_TRANSITION_MS = 220;
 const PANEL_TRANSITION_MS = 180;
 const MAP_TILE_ZOOM = 16;
-const MAX_IMAGE_DATA_URL_LENGTH = 15 * 1024 * 1024;
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 const SCROLL_BOTTOM_THRESHOLD = 24;
 
@@ -101,7 +102,7 @@ type PanelMode = 'idle' | 'keyboard' | 'voice' | 'emoji' | 'actions';
 type PendingImage = {
   uri: string;
   label: string;
-  base64?: string | null;
+  mimeType: ChatImageAttachment['mimeType'];
 };
 type LocationCandidate = {
   id: string;
@@ -285,7 +286,7 @@ export function CompanionChatScreen({
       .then((runs) => {
         if (!active) return;
         const pending = runs.find(
-          (run) => run.toolName === 'task.create' && run.status === 'AWAITING_CONFIRMATION',
+          (run) => ['task.create', 'task.update', 'task.cancel'].includes(run.toolName) && run.status === 'AWAITING_CONFIRMATION',
         );
         setPendingToolRun(pending ?? null);
       })
@@ -499,7 +500,7 @@ export function CompanionChatScreen({
         setIsGenerating(false);
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
         if (isNearBottomRef.current) scrollToLatestAfterRender();
-        if (proposedRun?.toolName === 'task.create') setPendingToolRun(proposedRun);
+        if (proposedRun && ['task.create', 'task.update', 'task.cancel'].includes(proposedRun.toolName)) setPendingToolRun(proposedRun);
       }
     },
     [
@@ -513,22 +514,27 @@ export function CompanionChatScreen({
   );
 
   const confirmToolRun = useCallback(async () => {
-    if (!pendingToolRun || pendingToolRun.toolName !== 'task.create') return;
+    if (!pendingToolRun) return;
     setResolvingToolRun(true);
     try {
       await confirmAgentToolRun(conversationId, pendingToolRun.id);
       const taskTitle = typeof pendingToolRun.input.title === 'string' ? pendingToolRun.input.title : '提醒';
+      const message = pendingToolRun.toolName === 'task.cancel'
+        ? '已取消提醒。'
+        : pendingToolRun.toolName === 'task.update'
+          ? `已修改提醒：${taskTitle}`
+          : `已创建提醒：${taskTitle}`;
       setMessages((current) => [...current, {
         id: createMessageId(),
         role: 'assistant',
-        content: `已创建提醒：${taskTitle}`,
+        content: message,
       }]);
       setPendingToolRun(null);
       isNearBottomRef.current = true;
       scrollToLatestAfterRender();
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success).catch(() => {});
     } catch (error) {
-      Alert.alert('无法创建提醒', getApiErrorMessage(error, '请稍后重试'));
+      Alert.alert('无法执行提醒操作', getApiErrorMessage(error, '请稍后重试'));
     } finally {
       setResolvingToolRun(false);
     }
@@ -553,7 +559,12 @@ export function CompanionChatScreen({
     Keyboard.dismiss();
     setKeyboardHeight(0);
     setMode('actions');
-    setPendingImage({ uri: asset.uri, label, base64: asset.base64 });
+    const mimeType = asset.mimeType;
+    if (!mimeType || !['image/jpeg', 'image/png', 'image/gif', 'image/webp'].includes(mimeType)) {
+      Alert.alert('图片格式不支持', '请使用 JPEG、PNG、GIF 或 WebP 图片。');
+      return;
+    }
+    setPendingImage({ uri: asset.uri, label, mimeType: mimeType as ChatImageAttachment['mimeType'] });
     setPendingImageSelected(true);
   }, []);
 
@@ -561,25 +572,20 @@ export function CompanionChatScreen({
     if (!pendingImage || !pendingImageSelected) return;
 
     const imageToSend = pendingImage;
-    const imageDataUrl = imageToSend.base64 ? `data:image/jpeg;base64,${imageToSend.base64}` : null;
-    if (!imageDataUrl) {
-      Alert.alert('图片读取失败', '未能读取图片数据，请重新选择后发送。');
-      return;
-    }
-    if (imageDataUrl.length > MAX_IMAGE_DATA_URL_LENGTH) {
-      Alert.alert('图片过大', '请选择小于 11 MiB 的图片后发送。');
-      return;
-    }
-
     setPendingImage(null);
     setPendingImageSelected(true);
-    await appendUserTurn({
-      content: imageToSend.label,
-      imageUri: imageToSend.uri,
-      attachments: [{ url: imageDataUrl, mimeType: 'image/jpeg' }],
-      modeAfterSend: 'actions',
-    });
-  }, [appendUserTurn, pendingImage, pendingImageSelected]);
+    try {
+      const uploaded = await uploadChatMedia(conversationId, imageToSend.uri, imageToSend.mimeType);
+      await appendUserTurn({
+        content: imageToSend.label,
+        imageUri: imageToSend.uri,
+        attachments: [{ url: uploaded.url, mimeType: imageToSend.mimeType }],
+        modeAfterSend: 'actions',
+      });
+    } catch (error) {
+      Alert.alert('图片上传失败', getApiErrorMessage(error, '请检查网络后重试。'));
+    }
+  }, [appendUserTurn, conversationId, pendingImage, pendingImageSelected]);
 
   const onSend = useCallback(async () => {
     const trimmed = input.trim();
@@ -602,7 +608,7 @@ export function CompanionChatScreen({
 
     const result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ['images'],
-      base64: true,
+      base64: false,
       quality: 0.7,
       allowsEditing: false,
     });
@@ -621,7 +627,7 @@ export function CompanionChatScreen({
 
     const result = await ImagePicker.launchCameraAsync({
       mediaTypes: ['images'],
-      base64: true,
+      base64: false,
       quality: 0.7,
       allowsEditing: false,
     });
@@ -868,7 +874,7 @@ export function CompanionChatScreen({
             footerAnimatedStyle,
           ]}
           onLayout={onFooterLayout}>
-          {pendingToolRun?.toolName === 'task.create' ? (
+          {pendingToolRun ? (
             <View style={styles.toolCardContainer}>
               <ToolConfirmationCard
                 run={pendingToolRun}
@@ -1014,7 +1020,7 @@ function GeneratedImagePreviewModal({ imageUri, onClose }: { imageUri: string | 
         <Pressable accessibilityRole="button" accessibilityLabel="关闭图片预览" onPress={onClose} style={styles.generatedImagePreviewClose}>
           <SymbolView name={{ ios: 'xmark', android: 'close', web: 'close' }} size={22} tintColor="#FFFFFF" />
         </Pressable>
-        {imageUri ? <Image source={{ uri: imageUri }} style={styles.generatedImagePreviewImage} resizeMode="contain" /> : null}
+        {imageUri ? <Image source={getAuthenticatedMediaSource(imageUri)} style={styles.generatedImagePreviewImage} resizeMode="contain" /> : null}
       </View>
     </Modal>
   );
@@ -1032,20 +1038,25 @@ function ToolConfirmationCard({
   onCancel: () => void;
 }) {
   const theme = useTheme();
-  const title = typeof run.input.title === 'string' ? run.input.title : '未命名提醒';
+  const title = typeof run.input.title === 'string' ? run.input.title : '该提醒';
   const date = typeof run.input.dueAt === 'string'
     ? new Date(run.input.dueAt).toLocaleString('zh-CN', { month: 'long', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })
     : '时间待确认';
+  const isCancel = run.toolName === 'task.cancel';
+  const isUpdate = run.toolName === 'task.update';
+  const heading = isCancel ? '取消提醒' : isUpdate ? '修改提醒' : '创建提醒';
+  const description = isCancel ? '确认后将停止此提醒' : isUpdate ? '确认后将更新此提醒的安排' : '确认后入队；到点向已开启推送的真机发送通知';
+  const action = isCancel ? '确认取消' : isUpdate ? '确认修改' : '确认创建';
   return (
     <View style={[styles.toolCard, { backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}>
       <View style={styles.toolHeader}>
-        <View style={styles.toolIcon}><SymbolView name={{ ios: 'bell.badge.fill', android: 'notifications_active', web: 'notifications_active' }} size={16} tintColor="#2878E8" /></View>
-        <View style={styles.toolCopy}><ThemedText type="smallBold">创建提醒</ThemedText><ThemedText type="small" themeColor="textSecondary">确认后入队；到点向已开启推送的真机发送通知</ThemedText></View>
+        <View style={styles.toolIcon}><SymbolView name={{ ios: isCancel ? 'bell.slash.fill' : 'bell.badge.fill', android: isCancel ? 'notifications_off' : 'notifications_active', web: isCancel ? 'notifications_off' : 'notifications_active' }} size={16} tintColor="#2878E8" /></View>
+        <View style={styles.toolCopy}><ThemedText type="smallBold">{heading}</ThemedText><ThemedText type="small" themeColor="textSecondary">{description}</ThemedText></View>
       </View>
       <View style={[styles.toolDetail, { backgroundColor: theme.background }]}><ThemedText type="smallBold">{title}</ThemedText><ThemedText type="small" themeColor="textSecondary">{date}</ThemedText></View>
       <View style={styles.toolActions}>
         <Pressable disabled={submitting} onPress={onCancel} style={({ pressed }) => [styles.toolCancel, { backgroundColor: theme.background }, pressed || submitting ? styles.pressed : null]}><ThemedText type="smallBold">取消</ThemedText></Pressable>
-        <Pressable disabled={submitting} onPress={onConfirm} style={({ pressed }) => [styles.toolConfirm, pressed || submitting ? styles.pressed : null]}>{submitting ? <ActivityIndicator color="#FFFFFF" /> : <ThemedText type="smallBold" style={styles.toolConfirmText}>确认创建</ThemedText>}</Pressable>
+        <Pressable disabled={submitting} onPress={onConfirm} style={({ pressed }) => [styles.toolConfirm, pressed || submitting ? styles.pressed : null]}>{submitting ? <ActivityIndicator color="#FFFFFF" /> : <ThemedText type="smallBold" style={styles.toolConfirmText}>{action}</ThemedText>}</Pressable>
       </View>
     </View>
   );

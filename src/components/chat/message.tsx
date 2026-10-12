@@ -6,6 +6,7 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { getAuthenticatedMediaSource } from '@/services/api-auth';
 
 type MessageProps = {
   role: 'user' | 'assistant';
@@ -48,7 +49,7 @@ export function ChatMessageBubble({
             accessibilityLabel="预览图片"
             onPress={onImagePress}
             disabled={!onImagePress}>
-            <Image source={{ uri: imageUri }} style={styles.messageImage} />
+            <Image source={getAuthenticatedMediaSource(imageUri)} style={styles.messageImage} />
           </Pressable>
         ) : null}
         {audioUri ? (

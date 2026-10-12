@@ -1,4 +1,5 @@
 import { apiFetch, apiJson, assertApiResponse, getApiBaseUrl } from '@/services/http';
+import { fetch } from 'expo/fetch';
 
 type SseEvent = {
   type: string;
@@ -8,6 +9,14 @@ type SseEvent = {
 export type ChatImageAttachment = {
   url: string;
   mimeType: 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp';
+};
+
+export type UploadedMedia = {
+  id: string;
+  url: string;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
 };
 
 function resolveImageUrl(url: string) {
@@ -147,13 +156,14 @@ export type ChatAgentSettings = {
   responseStyle: string;
   modelId: string;
   imageModelId: string;
+  imageUseContext: boolean;
   contextMessageLimit: number;
   maxContextMessageLimit: number;
 };
 
 export type UpdateChatAgentSettings = Pick<
   ChatAgentSettings,
-  'agentName' | 'agentProfile' | 'responseStyle' | 'modelId' | 'imageModelId' | 'contextMessageLimit'
+  'agentName' | 'agentProfile' | 'responseStyle' | 'modelId' | 'imageModelId' | 'imageUseContext' | 'contextMessageLimit'
 >;
 
 export type CompanionMemoryCategory =
@@ -259,6 +269,24 @@ export async function updateChatAgentSettings(
       body: JSON.stringify(settings),
     },
   );
+}
+
+export async function uploadChatMedia(
+  conversationId: string,
+  uri: string,
+  mimeType: ChatImageAttachment['mimeType'],
+) {
+  const localResponse = await fetch(uri);
+  if (!localResponse.ok) throw new Error('无法读取所选图片，请重新选择后发送。');
+  const data = await localResponse.blob();
+  if (!data.size) throw new Error('所选图片为空，请重新选择后发送。');
+
+  return apiJson<UploadedMedia>(`/v1/chats/${encodeURIComponent(conversationId)}/media`, {
+    method: 'POST',
+    timeoutMs: 0,
+    headers: { 'Content-Type': mimeType },
+    body: data,
+  });
 }
 
 export function getCompanionMemories(conversationId: string) {
