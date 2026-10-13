@@ -23,10 +23,13 @@ import {
   cancelAgentIntent,
   disablePushDevice,
   getAgentIntents,
+  getCompanionCommitments,
   getCompanionProactivePolicy,
   getPushDevices,
   registerPushDevice,
+  retryPushDelivery,
   type AgentIntent,
+  type CompanionCommitmentEvent,
   type CompanionProactivePolicy,
   updateAgentIntent,
   updateCompanionProactivePolicy,
@@ -53,6 +56,7 @@ const STATUS_LABEL: Record<AgentIntent['status'], string> = {
   CANCELLED: '已取消',
   EXPIRED: '已过期',
 };
+const COMMITMENT_STATE_LABEL: Record<string, string> = { CANDIDATE: '等待确认记忆', CONFIRMED: '已记住', DELETED: '已删除', AWAITING_CONFIRMATION: '等待确认', SCHEDULED: '已安排', RUNNING: '执行中', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消', EXPIRED: '已过期', QUEUED: '等待投递', SENT: '已提交推送', DELIVERED: '已送达' };
 
 function formatIntentDateInput(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -93,6 +97,19 @@ function sortIntents(intents: AgentIntent[]) {
   return [...intents].sort((left, right) => new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime());
 }
 
+function commitmentDetail(event: CompanionCommitmentEvent) {
+  const reason = event.detail?.reason;
+  if (typeof reason === 'string' && reason.trim()) return `失败原因：${reason}`;
+  const title = event.detail?.title;
+  if (typeof title === 'string' && title.trim()) return title;
+  return event.eventType;
+}
+
+function canRetryPush(event: CompanionCommitmentEvent, events: CompanionCommitmentEvent[]) {
+  return event.subject === 'PUSH_DELIVERY' && event.state === 'FAILED' && !events.some((next) =>
+    next.subjectId === event.subjectId && next.createdAt > event.createdAt && next.state !== 'FAILED');
+}
+
 export default function CompanionTasksScreen() {
   const { conversationId = 'lumimate', title = 'LumiMate' } = useLocalSearchParams<{
     conversationId?: string;
@@ -100,6 +117,7 @@ export default function CompanionTasksScreen() {
   }>();
   const theme = useTheme();
   const [intents, setIntents] = useState<AgentIntent[]>([]);
+  const [commitments, setCommitments] = useState<CompanionCommitmentEvent[]>([]);
   const [policy, setPolicy] = useState(FALLBACK_POLICY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -110,20 +128,23 @@ export default function CompanionTasksScreen() {
   const [editTitle, setEditTitle] = useState('');
   const [editDueAt, setEditDueAt] = useState('');
   const [savingIntent, setSavingIntent] = useState(false);
+  const [retryingDeliveryId, setRetryingDeliveryId] = useState<string | null>(null);
 
   const activeIntents = useMemo(() => intents.filter((intent) => ACTIVE_STATUSES.has(intent.status)), [intents]);
   const pastIntents = useMemo(() => intents.filter((intent) => !ACTIVE_STATUSES.has(intent.status)).slice(0, 8), [intents]);
 
   const load = useCallback(async () => {
-    const [nextIntents, nextPolicy, devices] = await Promise.all([
+    const [nextIntents, nextPolicy, devices, nextCommitments] = await Promise.all([
       getAgentIntents(conversationId),
       getCompanionProactivePolicy(conversationId),
       getPushDevices(conversationId),
+      getCompanionCommitments(conversationId),
     ]);
     setIntents(nextIntents);
     setPolicy(nextPolicy);
     setPushDeviceCount(devices.filter((device) => device.enabled).length);
     setPushEnabled(devices.some((device) => device.enabled));
+    setCommitments(nextCommitments.slice(0, 12));
   }, [conversationId]);
 
   useEffect(() => {
@@ -221,6 +242,21 @@ export default function CompanionTasksScreen() {
     ]);
   }, [conversationId]);
 
+  const retryPush = useCallback((event: CompanionCommitmentEvent) => {
+    Alert.alert('重试推送？', '会再次向当前设备发送此提醒。', [
+      { text: '返回', style: 'cancel' },
+      {
+        text: '重试', onPress: () => {
+          setRetryingDeliveryId(event.subjectId);
+          void retryPushDelivery(conversationId, event.subjectId)
+            .then(load)
+            .catch((error: unknown) => Alert.alert('无法重试推送', getApiErrorMessage(error, '操作失败')))
+            .finally(() => setRetryingDeliveryId(null));
+        },
+      },
+    ]);
+  }, [conversationId, load]);
+
   const openEdit = useCallback((intent: AgentIntent) => {
     setEditingIntent(intent);
     setEditTitle(intent.title);
@@ -314,6 +350,8 @@ export default function CompanionTasksScreen() {
             </View>
 
             {pastIntents.length ? <><SectionTitle title="历史" subtitle="最近 8 条" />{pastIntents.map((intent) => <IntentCard key={intent.id} intent={intent} theme={theme} />)}</> : null}
+            <SectionTitle title="承诺记录" subtitle="以实际状态为准" />
+            {commitments.length ? commitments.map((event) => <View key={event.id} style={[styles.commitmentCard, { backgroundColor: theme.backgroundElement }]}><View style={styles.commitmentCopy}><ThemedText type="smallBold">{COMMITMENT_STATE_LABEL[event.state] || event.state}</ThemedText><ThemedText type="small" themeColor="textSecondary">{commitmentDetail(event)}</ThemedText>{canRetryPush(event, commitments) ? <Pressable accessibilityRole="button" accessibilityLabel="重试失败推送" disabled={retryingDeliveryId === event.subjectId} onPress={() => retryPush(event)} style={({ pressed }) => [styles.retryPushButton, { backgroundColor: theme.primarySurface }, pressed || retryingDeliveryId === event.subjectId ? styles.pressed : null]}>{retryingDeliveryId === event.subjectId ? <ActivityIndicator size="small" color={theme.primary} /> : <ThemedText type="smallBold" style={{ color: theme.primary }}>重试推送</ThemedText>}</Pressable> : null}</View><ThemedText type="small" themeColor="textSecondary">{new Date(event.createdAt).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false })}</ThemedText></View>) : <EmptyCard text="暂无可验证的陪伴记录。" theme={theme} />}
           </ScrollView>
         )}
       </SafeAreaView>
@@ -391,5 +429,8 @@ const styles = StyleSheet.create({
   saveButton: { alignItems: 'center', borderRadius: 14, minHeight: 52, justifyContent: 'center', marginBottom: Spacing.three, marginTop: Spacing.two }, saveText: { color: '#FFFFFF' },
   intentCard: { borderRadius: 18, gap: Spacing.two, padding: Spacing.three }, intentHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' }, statusChip: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 4 }, statusText: { fontSize: 12 }, intentTitle: { fontSize: 16, lineHeight: 23 }, intentActions: { alignItems: 'center', alignSelf: 'flex-end', flexDirection: 'row', gap: Spacing.two }, editLink: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: Spacing.two }, editText: {}, cancelLink: { alignItems: 'center', justifyContent: 'center', minHeight: 44, paddingHorizontal: Spacing.two }, cancelText: {},
   emptyCard: { borderRadius: 18, padding: Spacing.three }, pressed: { opacity: 0.68 },
+  commitmentCard: { alignItems: 'center', borderRadius: 18, flexDirection: 'row', gap: Spacing.two, justifyContent: 'space-between', padding: Spacing.three },
+  commitmentCopy: { flex: 1, gap: 2 },
+  retryPushButton: { alignItems: 'center', alignSelf: 'flex-start', borderRadius: 10, justifyContent: 'center', marginTop: Spacing.one, minHeight: 36, paddingHorizontal: Spacing.two },
   modalOverlay: { alignItems: 'center', backgroundColor: 'rgba(0, 0, 0, 0.32)', flex: 1, justifyContent: 'flex-end' }, editSheet: { borderTopLeftRadius: 24, borderTopRightRadius: 24, gap: Spacing.two, maxWidth: MaxContentWidth, padding: Spacing.three, paddingBottom: 32, width: '100%' }, editHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginBottom: Spacing.one }, closeButton: { alignItems: 'center', justifyContent: 'center', minHeight: 44, minWidth: 44 }, editInput: { borderRadius: 12, fontSize: 16, minHeight: 46, paddingHorizontal: Spacing.two }, editSaveButton: { marginBottom: 0 },
 });

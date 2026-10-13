@@ -202,6 +202,16 @@ export type CompanionProactivePolicy = {
   minimumIntervalMinutes: number;
 };
 
+export type CompanionCommitmentEvent = {
+  id: string;
+  subject: 'MEMORY' | 'AGENT_RUN' | 'AGENT_INTENT' | 'PUSH_DELIVERY';
+  subjectId: string;
+  eventType: string;
+  state: string;
+  detail: Record<string, unknown> | null;
+  createdAt: string;
+};
+
 export type UpdateCompanionProactivePolicy = Partial<CompanionProactivePolicy>;
 
 function parseSseEvent(frame: string): SseEvent | null {
@@ -343,6 +353,16 @@ export function updateCompanionRelationship(
 
 export function getCompanionProactivePolicy(conversationId: string) {
   return apiJson<CompanionProactivePolicy>(`/v1/chats/${encodeURIComponent(conversationId)}/proactive-policy`);
+}
+
+export function getCompanionCommitments(conversationId: string) {
+  return apiJson<CompanionCommitmentEvent[]>(`/v1/chats/${encodeURIComponent(conversationId)}/commitments`);
+}
+
+export function retryPushDelivery(conversationId: string, deliveryId: string) {
+  return apiJson(`/v1/chats/${encodeURIComponent(conversationId)}/push-deliveries/${encodeURIComponent(deliveryId)}/retry`, {
+    method: 'POST',
+  });
 }
 
 export function updateCompanionProactivePolicy(

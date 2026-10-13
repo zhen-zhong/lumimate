@@ -31,6 +31,15 @@
 
 ## P0：陪伴 Agent 基础
 
+### 可验证陪伴承诺状态机
+
+- [ ] 定义统一承诺状态：`proposed → awaiting_confirmation → scheduled → executing → completed | failed | cancelled | expired`；聊天文案不得越过真实状态。
+- [x] 追加不可变 `CompanionEvent`：记录状态、原因、关联消息/`AgentRun`/`AgentIntent`/`PushDelivery`、时间；已提供用户隔离的会话时间线 API 与 App 承诺详情。
+- [x] 关键异步写操作使用 Outbox：提醒创建/确认/改期、推送发送/receipt 回查、记忆提取均已接入同事务 Outbox 与启动补偿。
+- [x] 提醒执行后分别记录“聊天消息已写入”“推送已提交”“推送回执已送达/失败”；`SENT` 不会写成“已送达”。
+- [x] 记忆候选、确认、编辑、删除统一写入承诺时间线；只有 `CONFIRMED` 记忆可注入模型上下文。
+- [x] App 增加承诺详情页：当前状态、下一步、失败原因、重试/取消入口。
+
 - [ ] 定义长期记忆模型：`Memory`、`MemorySource`、`MemoryEmbedding`。
   - 记录类型：用户偏好、人物关系、地点、承诺、重要事件、稳定事实。
   - 每条记录保存来源消息、置信度、创建/更新时间、失效时间和用户可见性。
@@ -106,7 +115,7 @@ assistant 回复完成
 - [ ] 地图工具：当前位置、地点搜索、附近搜索、路线规划；路线/导航前向用户确认。
 - [x] `task.create`：创建 `AgentRun`、SSE 确认卡片、确认后入队、执行审计与刷新恢复。
 - [x] 客户端任务管理：查看、修改、取消定时任务；修改后重新调度 BullMQ job。
-- [ ] 任务工具：接入模型结构化 Tool Call，支持 `task.list`、`task.update`、`task.cancel`。
+- [x] 任务工具：OpenAI 兼容模型结构化 Tool Call 支持 `task.list`、`task.update`、`task.cancel`；读取直接执行，修改/取消仍须确认。
 - [ ] 图片工具：生图、编辑图片、生成任务状态与结果文件。
 - [ ] 将复杂多步骤请求建模为状态机：`planned → awaiting_confirmation → running → completed | failed | cancelled`。
 - [ ] 所有会改变外部状态的工具必须经用户确认；只读工具可自动调用。
