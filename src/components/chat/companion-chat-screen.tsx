@@ -426,6 +426,7 @@ export function CompanionChatScreen({
       let aiInfo: ChatMessageAiInfo | undefined;
       let proposedRun: AgentToolRun | undefined;
       let generatedImage = false;
+      let recoveredFromServer = false;
 
       try {
         await streamChatMessage({
@@ -468,31 +469,49 @@ export function CompanionChatScreen({
           },
         });
       } catch (error) {
-        const errorMessage = getApiErrorMessage(error, '聊天服务暂时不可用');
-        const replacePendingImageStatus = streamingRef.current === '正在生成图片…';
-        if (replacePendingImageStatus || !streamingRef.current) {
-          streamingRef.current = `抱歉，${errorMessage}`;
+        // iOS 的长 SSE 连接偶尔会在服务端已经完成生图后断开。
+        // 先以服务端持久化结果为准，避免把成功的图片错误地显示成网络失败。
+        try {
+          const history = mapHistoryMessages(await getChatHistory(conversationId));
+          const latestUserMessage = [...history].reverse().find((message) => message.role === 'user');
+          if (latestUserMessage?.content === content) {
+            recoveredFromServer = true;
+            generatedImage = history.some((message) => message.role === 'assistant' && Boolean(message.imageUri));
+            setMessages(history);
+          }
+        } catch {
+          // 原始连接与补偿查询都不可用时，保留可见的错误说明。
         }
-        if (replacePendingImageStatus || !visibleStreamingRef.current) {
-          typingQueueRef.current = [];
-          visibleStreamingRef.current = '';
-          streamingStore.set('');
-          typingQueueRef.current.push(...Array.from(streamingRef.current));
-          startTyping();
+
+        if (!recoveredFromServer) {
+          const errorMessage = getApiErrorMessage(error, '聊天服务暂时不可用');
+          const replacePendingImageStatus = streamingRef.current === '正在生成图片…';
+          if (replacePendingImageStatus || !streamingRef.current) {
+            streamingRef.current = `抱歉，${errorMessage}`;
+          }
+          if (replacePendingImageStatus || !visibleStreamingRef.current) {
+            typingQueueRef.current = [];
+            visibleStreamingRef.current = '';
+            streamingStore.set('');
+            typingQueueRef.current.push(...Array.from(streamingRef.current));
+            startTyping();
+          }
         }
       } finally {
         await waitForTypingDrain();
 
         const finalContent = generatedImage ? '' : streamingRef.current || '抱歉，聊天服务未返回内容，请重试。';
-        setMessages((current) =>
-          current.map((message) =>
-            message.id === assistantMessage.id
-              ? { ...message, content: finalContent, aiInfo }
-              : message.id === userMessage.id
-                ? { ...message, aiInfo }
-                : message,
-          ),
-        );
+        if (!recoveredFromServer) {
+          setMessages((current) =>
+            current.map((message) =>
+              message.id === assistantMessage.id
+                ? { ...message, content: finalContent, aiInfo }
+                : message.id === userMessage.id
+                  ? { ...message, aiInfo }
+                  : message,
+            ),
+          );
+        }
         streamingRef.current = '';
         visibleStreamingRef.current = '';
         typingQueueRef.current = [];
