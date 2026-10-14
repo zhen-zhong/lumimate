@@ -698,7 +698,7 @@ export function GaodeMemoryMap() {
                   styles.routeHeader,
                   { backgroundColor: theme.background, minHeight: safeAreaInsets.top + 70, paddingTop: safeAreaInsets.top + 4 },
                 ]}>
-            <Pressable accessibilityRole="button" accessibilityLabel="退出路线规划" onPress={clearRoute} style={styles.routeBackButton}>
+            <Pressable accessibilityRole="button" accessibilityLabel="退出路线规划" onPress={clearRoute} style={[styles.routeBackButton, { backgroundColor: theme.backgroundElement }]}>
               <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={20} tintColor={theme.text} />
             </Pressable>
             <Pressable
@@ -725,7 +725,7 @@ export function GaodeMemoryMap() {
               <SymbolView name={{ ios: 'arrow.up.arrow.down', android: 'swap_vert', web: 'swap_vert' }} size={20} tintColor={ROUTE_BLUE} />
             </Pressable>
               </View>
-              <View style={[styles.routeModeTabs, { backgroundColor: theme.background, top: safeAreaInsets.top + 70 }]}>
+              <View style={[styles.routeModeTabs, { backgroundColor: theme.background, borderBottomColor: theme.backgroundSelected, top: safeAreaInsets.top + 70 }]}>
             {TRAVEL_MODES.map((mode) => {
               const selected = mode.key === travelMode;
               return (
@@ -737,9 +737,9 @@ export function GaodeMemoryMap() {
                     Haptics.selectionAsync().catch(() => undefined);
                     void planRoute(mode.key);
                   }}
-                  style={[styles.routeModeTab, selected && styles.routeModeTabSelected, isPlanningRoute && styles.routeModeTabDisabled]}>
-                  <SymbolView name={mode.icon} size={20} tintColor={selected ? ROUTE_BLUE : theme.textSecondary} />
-                  <Text style={[styles.routeModeText, { color: selected ? ROUTE_BLUE : theme.textSecondary }]}>{mode.label}</Text>
+                  style={[styles.routeModeTab, selected && [styles.routeModeTabSelected, { backgroundColor: theme.primarySurface }], isPlanningRoute && styles.routeModeTabDisabled]}>
+                  <SymbolView name={mode.icon} size={20} tintColor={selected ? theme.primary : theme.textSecondary} />
+                  <Text style={[styles.routeModeText, { color: selected ? theme.primary : theme.textSecondary }]}>{mode.label}</Text>
                 </Pressable>
               );
             })}
@@ -783,7 +783,7 @@ export function GaodeMemoryMap() {
             </View>
           ) : routePreview ? (
             <>
-              <View style={styles.routeSheetHandle} />
+              <View style={[styles.routeSheetHandle, { backgroundColor: theme.backgroundSelected }]} />
               <View style={styles.routeSheetHeader}>
                 <View style={styles.routeEndpoints}>
                   <View style={styles.routeEndpointRow}>
@@ -802,9 +802,9 @@ export function GaodeMemoryMap() {
                     </View>
                   </View>
                 </View>
-                <View style={styles.routeArrivalBadge}>
-                  <Text style={styles.routeArrivalLabel}>预计到达</Text>
-                  <Text style={styles.routeArrivalTime}>{formatArrivalTime(routePreview.duration).slice(0, 5)}</Text>
+                <View style={[styles.routeArrivalBadge, { backgroundColor: theme.primarySurface }]}>
+                  <Text style={[styles.routeArrivalLabel, { color: theme.textSecondary }]}>预计到达</Text>
+                  <Text style={[styles.routeArrivalTime, { color: theme.primary }]}>{formatArrivalTime(routePreview.duration).slice(0, 5)}</Text>
                 </View>
               </View>
               <View style={styles.routeCardList}>
@@ -819,32 +819,32 @@ export function GaodeMemoryMap() {
                       style={({ pressed }) => [
                         styles.routeCard,
                         {
-                          backgroundColor: selected ? '#F1F7FF' : theme.backgroundElement,
-                          borderColor: selected ? ROUTE_BLUE : 'transparent',
+                          backgroundColor: selected ? theme.primarySurface : theme.backgroundElement,
+                          borderColor: selected ? theme.primary : 'transparent',
                         },
                         pressed && styles.routeCardPressed,
                       ]}>
                       <View style={styles.routeCardTopLine}>
-                        <Text style={[styles.routeCardBadge, { color: selected ? ROUTE_BLUE : theme.textSecondary, backgroundColor: selected ? '#DDEEFF' : theme.background }]}>
+                        <Text style={[styles.routeCardBadge, { color: selected ? theme.primary : theme.textSecondary, backgroundColor: selected ? theme.background : theme.backgroundSelected }]}>
                           {index === 0 ? '推荐' : `方案 ${index + 1}`}
                         </Text>
                       </View>
-                      <Text style={[styles.routeCardDuration, { color: selected ? ROUTE_BLUE : theme.text }]}>{formatDuration(route.duration)}</Text>
+                      <Text style={[styles.routeCardDuration, { color: selected ? theme.primary : theme.text }]}>{formatDuration(route.duration)}</Text>
                       <Text style={[styles.routeCardDistance, { color: theme.textSecondary }]}>
                         {formatDistance(route.distance)}{segmentCount ? ` · ${segmentCount} 个路段` : ''}
                       </Text>
-                      <Text style={[styles.routeCardLabel, { color: selected ? ROUTE_BLUE : theme.textSecondary }]}>
+                      <Text style={[styles.routeCardLabel, { color: selected ? theme.primary : theme.textSecondary }]}>
                         {selected ? '已选路线' : '点击选择'}
                       </Text>
                     </Pressable>
                   );
                 })}
               </View>
-              <View style={[styles.routeActionBar, { paddingBottom: safeAreaInsets.bottom + Spacing.one }]}>
+              <View style={[styles.routeActionBar, { borderTopColor: theme.backgroundSelected, paddingBottom: safeAreaInsets.bottom + Spacing.one }]}>
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => setRouteDetailsOpen(true)}
-                  style={({ pressed }) => [styles.routeDetailAction, { borderColor: theme.backgroundSelected }, pressed && styles.routeActionPressed]}>
+                  style={({ pressed }) => [styles.routeDetailAction, { backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }, pressed && styles.routeActionPressed]}>
                   <SymbolView
                     name={{ ios: 'list.bullet', android: 'format_list_bulleted', web: 'format_list_bulleted' }}
                     size={19}
@@ -889,9 +889,9 @@ export function GaodeMemoryMap() {
 
       <Modal animationType="slide" visible={routeDetailsOpen && Boolean(routePreview)} onRequestClose={() => setRouteDetailsOpen(false)}>
         <View style={[styles.routeDetailsScreen, { backgroundColor: theme.background }]}>
-          <View style={styles.routeDetailsHeader}>
+          <View style={[styles.routeDetailsHeader, { borderBottomColor: theme.backgroundSelected }]}>
             <Pressable accessibilityRole="button" accessibilityLabel="返回路线预览" onPress={() => setRouteDetailsOpen(false)} style={styles.routeDetailsBack}>
-              <Text style={[styles.routeDetailsBackGlyph, { color: theme.text }]}>‹</Text>
+              <SymbolView name={{ ios: 'chevron.left', android: 'arrow_back', web: 'arrow_back' }} size={22} tintColor={theme.text} />
             </Pressable>
             <View style={styles.routeDetailsHeading}>
               <Text style={[styles.routeDetailsTitle, { color: theme.text }]}>路线详情</Text>
@@ -1050,6 +1050,7 @@ export function GaodeMemoryMap() {
         <View style={[styles.searchMask, { backgroundColor: theme.background }]}>
           <View style={styles.searchHeader}>
             <View style={[styles.searchInputWrap, { backgroundColor: theme.backgroundElement }]}>
+              <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={18} tintColor={theme.textSecondary} />
               <TextInput
                 autoFocus
                 value={query}
@@ -1080,7 +1081,7 @@ export function GaodeMemoryMap() {
             style={styles.searchContent}
             contentContainerStyle={styles.searchContentContainer}>
             {results.map((poi) => (
-              <Pressable key={poi.id} accessibilityRole="button" onPress={() => void handleSelectPoi(poi)} style={({ pressed }) => [styles.result, pressed && { backgroundColor: theme.backgroundSelected }]}>
+              <Pressable key={poi.id} accessibilityRole="button" onPress={() => void handleSelectPoi(poi)} style={({ pressed }) => [styles.result, { borderBottomColor: theme.backgroundSelected }, pressed && { backgroundColor: theme.backgroundSelected }]}>
                 <Text numberOfLines={1} style={[styles.resultName, { color: theme.text }]}>{poi.name}</Text>
                 <Text numberOfLines={1} style={[styles.resultAddress, { color: theme.textSecondary }]}>{poi.address || poi.adName || poi.cityName || '地址未知'}</Text>
               </Pressable>
@@ -1094,7 +1095,7 @@ export function GaodeMemoryMap() {
                   </Pressable>
                 </View>
                 {searchHistory.map((poi) => (
-                  <Pressable key={poi.id} accessibilityRole="button" onPress={() => void handleSelectPoi(poi)} style={({ pressed }) => [styles.result, pressed && { backgroundColor: theme.backgroundSelected }]}>
+                  <Pressable key={poi.id} accessibilityRole="button" onPress={() => void handleSelectPoi(poi)} style={({ pressed }) => [styles.result, { borderBottomColor: theme.backgroundSelected }, pressed && { backgroundColor: theme.backgroundSelected }]}>
                     <View style={styles.historyResultHeader}>
                       <Text numberOfLines={1} style={[styles.historyResultName, { color: theme.text }]}>{poi.name}</Text>
                       <Text style={[styles.historyDate, { color: theme.textSecondary }]}>{formatSearchDate(poi.searchedAt)}</Text>
@@ -1138,9 +1139,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center', gap: 6,
     paddingRight: Spacing.three, paddingBottom: 6, paddingLeft: Spacing.three,
   },
-  routeBackButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  routeBackButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
   routeLocations: { flex: 1, minHeight: 60, justifyContent: 'center', gap: 0, borderRadius: 14, paddingHorizontal: 12 },
-  routeSwapButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', borderRadius: 12 },
+  routeSwapButton: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: 14 },
   routeSwapButtonPressed: { opacity: 0.7, transform: [{ scale: 0.94 }] },
   routeLocationRow: { height: 27, flexDirection: 'row', alignItems: 'center', gap: 9 },
   locationDot: { width: 9, height: 9, borderRadius: 4.5 },
@@ -1151,10 +1152,10 @@ const styles = StyleSheet.create({
   routeModeTabs: {
     position: 'absolute', top: 0, right: 0, left: 0, height: 50,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-around', gap: 4, paddingHorizontal: Spacing.two,
-    borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D8DCE3',
+    borderBottomWidth: StyleSheet.hairlineWidth,
   },
-  routeModeTab: { flex: 1, minWidth: 0, height: 38, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12 },
-  routeModeTabSelected: { backgroundColor: '#EAF2FF' },
+  routeModeTab: { flex: 1, minWidth: 0, height: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 4, borderRadius: 12 },
+  routeModeTabSelected: {},
   routeModeTabDisabled: { opacity: 0.5 },
   routeModeText: { fontSize: 14, fontWeight: '800' },
   locateButton: {
@@ -1168,7 +1169,7 @@ const styles = StyleSheet.create({
     shadowColor: '#0D1B30', shadowOffset: { width: 0, height: -4 }, shadowOpacity: 0.16, shadowRadius: 18, elevation: 12,
   },
   routeSheetSurface: { minHeight: ROUTE_SHEET_BASE_HEIGHT, overflow: 'hidden', borderTopLeftRadius: 26, borderTopRightRadius: 26 },
-  routeSheetHandle: { alignSelf: 'center', width: 34, height: 4, marginTop: 8, marginBottom: 5, borderRadius: 4, backgroundColor: '#D7DEE9' },
+  routeSheetHandle: { alignSelf: 'center', width: 34, height: 4, marginTop: 8, marginBottom: 5, borderRadius: 4 },
   routeSheetHeader: { minHeight: 70, flexDirection: 'row', alignItems: 'center', gap: Spacing.three, paddingHorizontal: Spacing.three, paddingBottom: 4 },
   routeEndpoints: { flex: 1, minWidth: 0 },
   routeEndpointRow: { minHeight: 31, flexDirection: 'row', alignItems: 'center', gap: 9 },
@@ -1179,9 +1180,9 @@ const styles = StyleSheet.create({
   routeEndpointCopy: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'baseline', gap: 7 },
   routeEndpointLabel: { width: 38, fontSize: 11, fontWeight: '700' },
   routeEndpointName: { flex: 1, fontSize: 15, fontWeight: '700' },
-  routeArrivalBadge: { minWidth: 72, alignItems: 'center', borderRadius: 14, backgroundColor: '#EAF3FF', paddingHorizontal: Spacing.two, paddingVertical: 6 },
-  routeArrivalLabel: { color: '#5275A9', fontSize: 11, fontWeight: '700' },
-  routeArrivalTime: { marginTop: 2, color: ROUTE_BLUE, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
+  routeArrivalBadge: { minWidth: 72, alignItems: 'center', borderRadius: 14, paddingHorizontal: Spacing.two, paddingVertical: 6 },
+  routeArrivalLabel: { fontSize: 11, fontWeight: '700' },
+  routeArrivalTime: { marginTop: 2, fontSize: 18, fontWeight: '800', letterSpacing: -0.3 },
   routeLoading: { minHeight: 276, alignItems: 'center', justifyContent: 'center', gap: Spacing.two },
   routeLoadingText: { fontSize: 14 },
   routeCardList: { width: '100%', flexDirection: 'row', gap: 8, paddingHorizontal: Spacing.three },
@@ -1192,7 +1193,7 @@ const styles = StyleSheet.create({
   routeCardBadge: { overflow: 'hidden', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 3, fontSize: 11, fontWeight: '800' },
   routeCardDistance: { marginTop: 3, fontSize: 11, fontWeight: '600' },
   routeCardLabel: { marginTop: 3, fontSize: 11, fontWeight: '700' },
-  routeActionBar: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: '#E9EDF3', paddingHorizontal: Spacing.three, paddingTop: 8, paddingBottom: Spacing.two },
+  routeActionBar: { minHeight: 74, flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 8, borderTopWidth: StyleSheet.hairlineWidth, paddingHorizontal: Spacing.three, paddingTop: 8, paddingBottom: Spacing.two },
   routeDetailAction: { width: 58, minHeight: 54, alignItems: 'center', justifyContent: 'center', gap: 4, borderWidth: 1, borderRadius: 16, backgroundColor: '#F7F9FC' },
   routeDetailActionText: { fontSize: 11, fontWeight: '800' },
   routeActionPressed: { opacity: 0.7, transform: [{ scale: 0.97 }] },
@@ -1205,9 +1206,8 @@ const styles = StyleSheet.create({
   startNavigationArrow: { width: 32, height: 32, alignItems: 'center', justifyContent: 'center', borderRadius: 16, backgroundColor: '#FFFFFF' },
   routeStatus: { minHeight: 244, paddingHorizontal: Spacing.four, textAlign: 'center', textAlignVertical: 'center', fontSize: 15 },
   routeDetailsScreen: { flex: 1, paddingTop: Platform.select({ ios: 58, default: 24 }) },
-  routeDetailsHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.three, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D1D5DC' },
-  routeDetailsBack: { width: 42, height: 42, alignItems: 'center', justifyContent: 'center' },
-  routeDetailsBackGlyph: { marginTop: -4, fontSize: 40, fontWeight: '300' },
+  routeDetailsHeader: { minHeight: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.three, borderBottomWidth: StyleSheet.hairlineWidth },
+  routeDetailsBack: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   routeDetailsHeading: { flex: 1, marginLeft: Spacing.one },
   routeDetailsTitle: { fontSize: 20, fontWeight: '800' },
   routeSummary: { marginTop: 2, fontSize: 13 },
@@ -1276,13 +1276,13 @@ const styles = StyleSheet.create({
   navigationOverviewText: { color: '#152033', fontSize: 12, fontWeight: '700' },
   searchMask: { position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, zIndex: 10, elevation: 12, paddingTop: Platform.select({ ios: 64, default: 24 }) },
   searchHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, paddingHorizontal: Spacing.three },
-  searchInputWrap: { flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', borderRadius: 10, paddingRight: Spacing.three },
-  searchInput: { flex: 1, minHeight: 44, paddingHorizontal: Spacing.three, fontSize: 16 },
-  cancelButton: { minHeight: 44, justifyContent: 'center' },
+  searchInputWrap: { flex: 1, minHeight: 48, flexDirection: 'row', alignItems: 'center', borderRadius: 14, gap: Spacing.one, paddingLeft: Spacing.three, paddingRight: Spacing.two },
+  searchInput: { flex: 1, minHeight: 48, paddingHorizontal: Spacing.one, fontSize: 16 },
+  cancelButton: { alignItems: 'center', justifyContent: 'center', minHeight: 44, minWidth: 44 },
   cancelButtonText: { fontSize: 15 },
   searchContent: { flex: 1, marginTop: Spacing.three },
   searchContentContainer: { paddingBottom: Spacing.five },
-  result: { minHeight: 60, justifyContent: 'center', paddingHorizontal: Spacing.three, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: '#D1D1D6' },
+  result: { minHeight: 60, justifyContent: 'center', paddingHorizontal: Spacing.three, borderBottomWidth: StyleSheet.hairlineWidth },
   resultName: { fontSize: 16, fontWeight: '600' },
   resultAddress: { marginTop: Spacing.half, fontSize: 13 },
   historySection: { marginTop: Spacing.three },

@@ -3,7 +3,8 @@ import * as SecureStore from 'expo-secure-store';
 import { fetch } from 'expo/fetch';
 import { Platform } from 'react-native';
 
-const ACCESS_TOKEN_KEY = 'lumimate:api-access-token';
+// expo-secure-store keys only allow letters, numbers, `.`, `-`, and `_`.
+const ACCESS_TOKEN_KEY = 'lumimate.api-access-token';
 
 let accessToken: string | null = null;
 let initialization: Promise<string> | null = null;
