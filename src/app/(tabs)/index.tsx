@@ -128,10 +128,10 @@ export default function HomeScreen() {
   }, [router]);
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background, paddingBottom: bottomInset }]}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
       <ScrollView
         style={styles.scrollView}
-        contentContainerStyle={styles.scrollContent}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomInset }]}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} tintColor={theme.primary} />}>
         <View style={styles.container}>
           <View style={styles.header}>
@@ -257,7 +257,7 @@ const styles = StyleSheet.create({
   divider: { height: StyleSheet.hairlineWidth, marginLeft: 64 },
   statusRow: { minHeight: 76, paddingHorizontal: Spacing.three, paddingVertical: 14, flexDirection: 'row', alignItems: 'center', gap: Spacing.three },
   statusIcon: { width: 40, height: 40, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  chatList: { gap: Spacing.two, paddingBottom: Spacing.five },
+  chatList: { gap: Spacing.two },
   chatItem: { flexDirection: 'row', alignItems: 'center', gap: Spacing.three, borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, padding: 14 },
   chatAvatar: { width: 44, height: 44, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
   chatCopy: { flex: 1, gap: 2 },

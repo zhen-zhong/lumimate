@@ -41,8 +41,8 @@ export default function SettingsScreen() {
   const version = Constants.expoConfig?.version ?? '1.0.0';
 
   return (
-    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background, paddingBottom: bottomInset }]}>
-      <ScrollView style={styles.scrollView} contentContainerStyle={styles.scrollContent}>
+    <SafeAreaView style={[styles.safeArea, { backgroundColor: theme.background }]}>
+      <ScrollView style={styles.scrollView} contentContainerStyle={[styles.scrollContent, { paddingBottom: bottomInset }]}>
         <View style={styles.container}>
           <View style={styles.header}>
             <ThemedText type="smallBold" themeColor="textSecondary">LumiMate</ThemedText>
@@ -99,7 +99,7 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, alignItems: 'center' },
   scrollView: { width: '100%' },
   scrollContent: { width: '100%', alignItems: 'center', paddingHorizontal: 12 },
-  container: { width: '100%', maxWidth: MaxContentWidth, paddingTop: Spacing.three, paddingBottom: Spacing.five, gap: Spacing.three },
+  container: { width: '100%', maxWidth: MaxContentWidth, paddingTop: Spacing.three, gap: Spacing.three },
   header: { gap: Spacing.one, paddingBottom: Spacing.one },
   profileCard: { minHeight: 82, borderWidth: StyleSheet.hairlineWidth, borderRadius: 18, flexDirection: 'row', alignItems: 'center', gap: Spacing.three, padding: Spacing.three },
   profileAvatar: { width: 48, height: 48, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
