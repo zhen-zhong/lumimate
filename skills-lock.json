@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "expo-gaode-map": {
+      "source": "TomWq/expo-gaode-map-skill",
+      "sourceType": "github",
+      "skillPath": "SKILL.md",
+      "computedHash": "aab35a368bc0bca252f0fb0ebc9a84cbd47aea7f1c03bdb91f1497d7ea30cabb"
+    }
+  }
+}
