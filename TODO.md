@@ -33,7 +33,7 @@
 
 ### 可验证陪伴承诺状态机
 
-- [ ] 定义统一承诺状态：`proposed → awaiting_confirmation → scheduled → executing → completed | failed | cancelled | expired`；聊天文案不得越过真实状态。
+- [x] 定义统一承诺状态：`proposed → awaiting_confirmation → scheduled → executing → completed | failed | cancelled | expired`；聊天文案不得越过真实状态。
 - [x] 追加不可变 `CompanionEvent`：记录状态、原因、关联消息/`AgentRun`/`AgentIntent`/`PushDelivery`、时间；已提供用户隔离的会话时间线 API 与 App 承诺详情。
 - [x] 关键异步写操作使用 Outbox：提醒创建/确认/改期、推送发送/receipt 回查、记忆提取均已接入同事务 Outbox 与启动补偿。
 - [x] 提醒执行后分别记录“聊天消息已写入”“推送已提交”“推送回执已送达/失败”；`SENT` 不会写成“已送达”。

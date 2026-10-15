@@ -56,7 +56,7 @@ const STATUS_LABEL: Record<AgentIntent['status'], string> = {
   CANCELLED: '已取消',
   EXPIRED: '已过期',
 };
-const COMMITMENT_STATE_LABEL: Record<string, string> = { CANDIDATE: '等待确认记忆', CONFIRMED: '已记住', DELETED: '已删除', AWAITING_CONFIRMATION: '等待确认', SCHEDULED: '已安排', RUNNING: '执行中', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消', EXPIRED: '已过期', QUEUED: '等待投递', SENT: '已提交推送', DELIVERED: '已送达' };
+const COMMITMENT_STATE_LABEL: Record<string, string> = { PROPOSED: '已提出', CANDIDATE: '等待确认记忆', CONFIRMED: '已记住', DELETED: '已删除', AWAITING_CONFIRMATION: '等待确认', SCHEDULED: '已安排', RUNNING: '执行中', EXECUTING: '执行中', COMPLETED: '已完成', FAILED: '失败', CANCELLED: '已取消', EXPIRED: '已过期', QUEUED: '等待投递', SENT: '已提交推送', DELIVERED: '已送达' };
 
 function formatIntentDateInput(value: string, timezone: string) {
   const parts = new Intl.DateTimeFormat('en-CA', {
