@@ -4,11 +4,11 @@
     "slug": "lumimate",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
+    "icon": "./assets/images/lumimate-icon-v2.png",
     "scheme": "lumimate",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon",
+      "icon": "./assets/images/lumimate-icon-v2.png",
       "bundleIdentifier": "com.zhenzhong.lumimate",
       "appleTeamId": "3HP563AV64",
       "infoPlist": {
@@ -78,9 +78,9 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "backgroundColor": "#0B1F4A",
+          "image": "./assets/images/lumimate-splash-v2.png",
+          "imageWidth": 220
         }
       ],
       "expo-asset",
