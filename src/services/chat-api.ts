@@ -63,7 +63,7 @@ export type StreamChatMessageOptions = {
   content: string;
   attachments?: ChatImageAttachment[];
   onDelta: (delta: string) => void;
-  onImageGenerated?: (images: ChatImageAttachment[], action?: 'generate' | 'edit') => void;
+  onImageGenerated?: (image: { messageId: string; images: ChatImageAttachment[]; action?: 'generate' | 'edit' }) => void;
   onImageCaption?: (caption: { messageId: string; content: string; info?: ChatMessageAiInfo }) => void;
   onAgentRunProposed?: (run: AgentToolRun) => void;
   onCompleted?: (info: ChatMessageAiInfo) => void;
@@ -182,8 +182,29 @@ export type CompanionMemory = {
   status: CompanionMemoryStatus;
   content: string;
   confidence: number | null;
+  sourceMessageId: string | null;
+  memoryKey: string | null;
+  archivedAt: string | null;
+  supersededAt: string | null;
+  supersededById: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type CompanionMemoryProvenance = {
+  memory: Pick<CompanionMemory, 'id' | 'category' | 'status' | 'content' | 'confidence' | 'createdAt' | 'updatedAt' | 'archivedAt' | 'supersededAt'>;
+  source: { id: string; role: 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM'; content: string; createdAt: string } | null;
+  supersededBy: Pick<CompanionMemory, 'id' | 'content' | 'status' | 'updatedAt'> | null;
+};
+
+export type CompanionPresence = {
+  activityKey: string;
+  activityLabel: string;
+  nextPlan: string | null;
+  source: string;
+  lastActivityAt: string | null;
+  expiresAt: string | null;
+  recentEvents: { id: string; eventType: string; content: string; truth: 'SYSTEM' | 'VIRTUAL'; occurredAt: string }[];
 };
 
 export type CompanionRelationship = {
@@ -303,6 +324,12 @@ export function getCompanionMemories(conversationId: string) {
   return apiJson<CompanionMemory[]>(`/v1/chats/${encodeURIComponent(conversationId)}/memories`);
 }
 
+export function getCompanionMemoryProvenance(conversationId: string, memoryId: string) {
+  return apiJson<CompanionMemoryProvenance>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/memories/${encodeURIComponent(memoryId)}/provenance`,
+  );
+}
+
 export function confirmCompanionMemory(conversationId: string, memoryId: string) {
   return apiJson<CompanionMemory>(
     `/v1/chats/${encodeURIComponent(conversationId)}/memories/${encodeURIComponent(memoryId)}/confirm`,
@@ -331,6 +358,17 @@ export async function removeCompanionMemory(conversationId: string, memoryId: st
     { method: 'DELETE' },
   );
   await assertApiResponse(response);
+}
+
+export function archiveCompanionMemory(conversationId: string, memoryId: string) {
+  return apiJson<CompanionMemory>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/memories/${encodeURIComponent(memoryId)}/archive`,
+    { method: 'POST' },
+  );
+}
+
+export function getCompanionPresence(conversationId: string) {
+  return apiJson<CompanionPresence>(`/v1/chats/${encodeURIComponent(conversationId)}/presence`);
 }
 
 export function getCompanionRelationship(conversationId: string) {
@@ -539,7 +577,9 @@ export async function streamChatMessage({
           const action = event.data.action === 'generate' || event.data.action === 'edit'
             ? event.data.action
             : undefined;
-          if (images.length) onImageGenerated?.(images, action);
+          if (images.length && typeof event.data.messageId === 'string') {
+            onImageGenerated?.({ messageId: event.data.messageId, images, action });
+          }
         }
         if (event.type === 'image.caption' && typeof event.data.messageId === 'string' && typeof event.data.content === 'string') {
           const model = event.data.model;

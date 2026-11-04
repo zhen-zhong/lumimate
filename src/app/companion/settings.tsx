@@ -327,6 +327,21 @@ export default function AgentSettingsScreen() {
               <View style={[styles.groupCard, { backgroundColor: theme.backgroundElement }]}>
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel="打开此刻状态"
+                  onPress={() => router.push({ pathname: '/companion/presence' as never, params: { conversationId, title } })}
+                  style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
+                  <View style={[styles.fieldIcon, { backgroundColor: theme.primarySurface }]}>
+                    <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={17} tintColor={theme.primary} />
+                  </View>
+                  <View style={styles.fieldTitleCopy}>
+                    <ThemedText type="default">此刻状态</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">查看记录中的陪伴状态和近期事件</ThemedText>
+                  </View>
+                  <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.textSecondary} />
+                </Pressable>
+                <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+                <Pressable
+                  accessibilityRole="button"
                   accessibilityLabel="打开技能中心"
                   onPress={() => router.push({ pathname: '/companion/skills' as never, params: { conversationId, title } })}
                   style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>

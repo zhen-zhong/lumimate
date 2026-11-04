@@ -10,6 +10,16 @@ import * as ImagePicker from 'expo-image-picker';
 import * as Location from 'expo-location';
 import { useFocusEffect } from 'expo-router';
 import { SymbolView, type AndroidSymbol, type SFSymbol } from 'expo-symbols';
+import {
+  ExpoGaodeMapModule,
+  MapType,
+  MapView,
+  Marker,
+  reGeocode,
+  searchPOI,
+  type MapViewRef,
+  type POI,
+} from 'expo-gaode-map-navigation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -23,6 +33,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   TextInput,
   View,
@@ -71,9 +82,12 @@ const CHAT_PANEL_HEIGHT = 236;
 const KEYBOARD_UNDERLAY = Platform.OS === 'ios' ? 10 : 0;
 const KEYBOARD_TRANSITION_MS = 220;
 const PANEL_TRANSITION_MS = 180;
-const MAP_TILE_ZOOM = 16;
 const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 const SCROLL_BOTTOM_THRESHOLD = 24;
+const DEFAULT_LOCATION = { latitude: 39.9087, longitude: 116.3975 };
+const GAODE_REQUEST_TIMEOUT_MS = 12_000;
+
+let gaodePrivacyConfigured = false;
 
 function mapHistoryMessages(history: Awaited<ReturnType<typeof getChatHistory>>): ChatMessage[] {
   return history.map<ChatMessage>((message) => ({
@@ -111,7 +125,6 @@ type LocationCandidate = {
   coordinateText: string;
   latitude: number;
   longitude: number;
-  mapTileUri: string;
 };
 
 function StreamingBubble({ store }: { store: ReturnType<typeof createStreamingStore> }) {
@@ -119,58 +132,77 @@ function StreamingBubble({ store }: { store: ReturnType<typeof createStreamingSt
   return <ChatMessageBubble role="assistant" streaming>{text}</ChatMessageBubble>;
 }
 
-function formatAddress(address?: Location.LocationGeocodedAddress) {
-  if (!address) return '';
-
-  return (
-    address.formattedAddress ||
-    [
-      address.country,
-      address.region,
-      address.city,
-      address.district,
-      address.street,
-      address.streetNumber,
-    ]
-      .filter(Boolean)
-      .join(' ')
-  );
+function ensureGaodePrivacyReady() {
+  if (Platform.OS === 'web' || gaodePrivacyConfigured) return;
+  const status = ExpoGaodeMapModule.getPrivacyStatus();
+  if (!status.isReady) {
+    ExpoGaodeMapModule.setPrivacyConfig({
+      hasShow: true,
+      hasContainsPrivacy: true,
+      hasAgree: true,
+      privacyVersion: '2026-09-10',
+    });
+  }
+  gaodePrivacyConfigured = true;
 }
 
-function getMapTileUri(latitude: number, longitude: number) {
-  const clampedLatitude = Math.max(-85.0511, Math.min(85.0511, latitude));
-  const zoomScale = 2 ** MAP_TILE_ZOOM;
-  const x = Math.floor(((longitude + 180) / 360) * zoomScale);
-  const latitudeRadians = (clampedLatitude * Math.PI) / 180;
-  const y = Math.floor(
-    ((1 - Math.log(Math.tan(latitudeRadians) + 1 / Math.cos(latitudeRadians)) / Math.PI) / 2) *
-      zoomScale,
-  );
-
-  return `https://tile.openstreetmap.org/${MAP_TILE_ZOOM}/${x}/${y}.png`;
+function formatLocationDistance(distance?: number) {
+  if (typeof distance !== 'number' || !Number.isFinite(distance)) return '当前位置附近';
+  return distance < 1000 ? `${Math.max(1, Math.round(distance))}m内` : `${(distance / 1000).toFixed(1)}km内`;
 }
 
-function createLocationCandidates(
-  location: Location.LocationObject,
-  address?: Location.LocationGeocodedAddress,
-): LocationCandidate[] {
-  const { latitude, longitude } = location.coords;
-  const coordinateText = `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`;
-  const addressText = formatAddress(address);
-  const primaryName = address?.name || address?.street || address?.district || '当前位置';
-  const primaryDetail = addressText || coordinateText;
+function toLocationCandidate(poi: Pick<POI, 'id' | 'name' | 'address' | 'location' | 'distance'>): LocationCandidate {
+  const { latitude, longitude } = poi.location;
+  return {
+    id: poi.id,
+    name: poi.name || '未知地点',
+    detail: `${formatLocationDistance(poi.distance)}${poi.address ? ` | ${poi.address}` : ''}`,
+    coordinateText: `${latitude.toFixed(6)}, ${longitude.toFixed(6)}`,
+    latitude,
+    longitude,
+  };
+}
 
-  return [
-    {
-      id: 'current',
-      name: primaryName,
-      detail: `100m内 | ${primaryDetail}`,
-      coordinateText,
-      latitude,
-      longitude,
-      mapTileUri: getMapTileUri(latitude, longitude),
-    },
-  ];
+function withGaodeTimeout<T>(request: Promise<T>, label: string) {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label}超时`)), GAODE_REQUEST_TIMEOUT_MS);
+    void request.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+async function getCurrentGaodeLocation() {
+  try {
+    const location = await withGaodeTimeout(
+      ExpoGaodeMapModule.getCurrentLocation(),
+      '高德定位',
+    );
+    return { latitude: location.latitude, longitude: location.longitude };
+  } catch (gaodeError) {
+    // 高德单次定位依赖网络逆地理编码；设备坐标由系统定位兜底，再转换成高德坐标。
+    const permission = await Location.requestForegroundPermissionsAsync();
+    if (!permission.granted) throw gaodeError;
+    const cached = await Location.getLastKnownPositionAsync({ maxAge: 60_000, requiredAccuracy: 200 });
+    const location = cached ?? await withGaodeTimeout(
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      '系统定位',
+    );
+    return withGaodeTimeout(
+      ExpoGaodeMapModule.coordinateConvert(
+        { latitude: location.coords.latitude, longitude: location.coords.longitude },
+        6,
+      ),
+      '坐标转换',
+    );
+  }
 }
 
 type CompanionChatScreenProps = {
@@ -212,9 +244,6 @@ export function CompanionChatScreen({
   const [pendingImageSelected, setPendingImageSelected] = useState(true);
   const [previewImageUri, setPreviewImageUri] = useState<string | null>(null);
   const [locationModalVisible, setLocationModalVisible] = useState(false);
-  const [locationLoading, setLocationLoading] = useState(false);
-  const [locationCandidates, setLocationCandidates] = useState<LocationCandidate[]>([]);
-  const [selectedLocationId, setSelectedLocationId] = useState<string | null>(null);
   const reducedMotion = useReducedMotion();
   const footerOffset = useSharedValue(0);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -426,7 +455,6 @@ export function CompanionChatScreen({
       let aiInfo: ChatMessageAiInfo | undefined;
       let proposedRun: AgentToolRun | undefined;
       let generatedImage = false;
-      let recoveredFromServer = false;
 
       try {
         await streamChatMessage({
@@ -438,7 +466,7 @@ export function CompanionChatScreen({
             typingQueueRef.current.push(...Array.from(delta));
             startTyping();
           },
-          onImageGenerated: (generatedImages) => {
+          onImageGenerated: ({ messageId, images: generatedImages }) => {
             generatedImage = true;
             streamingRef.current = '';
             visibleStreamingRef.current = '';
@@ -447,7 +475,7 @@ export function CompanionChatScreen({
             setMessages((current) =>
               current.map((message) =>
                 message.id === assistantMessage.id
-                  ? { ...message, content: '', imageUri: generatedImages[0]?.url }
+                  ? { ...message, id: messageId, content: '', imageUri: generatedImages[0]?.url }
                   : message,
               ),
             );
@@ -470,48 +498,52 @@ export function CompanionChatScreen({
         });
       } catch (error) {
         // iOS 的长 SSE 连接偶尔会在服务端已经完成生图后断开。
-        // 先以服务端持久化结果为准，避免把成功的图片错误地显示成网络失败。
-        try {
-          const history = mapHistoryMessages(await getChatHistory(conversationId));
-          const latestUserMessage = [...history].reverse().find((message) => message.role === 'user');
-          if (latestUserMessage?.content === content) {
-            recoveredFromServer = true;
-            generatedImage = history.some((message) => message.role === 'assistant' && Boolean(message.imageUri));
-            setMessages(history);
-          }
-        } catch {
-          // 原始连接与补偿查询都不可用时，保留可见的错误说明。
-        }
+        // 先显示可操作的错误状态；持久化结果在后台回填，不能阻塞下一次发送。
+        void getChatHistory(conversationId)
+          .then(mapHistoryMessages)
+          .then((history) => {
+            const latestUserMessage = [...history].reverse().find((message) => message.role === 'user');
+            if (latestUserMessage?.content === content) setMessages(history);
+          })
+          .catch(() => undefined);
 
-        if (!recoveredFromServer) {
-          const errorMessage = getApiErrorMessage(error, '聊天服务暂时不可用');
-          const replacePendingImageStatus = streamingRef.current === '正在生成图片…';
-          if (replacePendingImageStatus || !streamingRef.current) {
-            streamingRef.current = `抱歉，${errorMessage}`;
-          }
-          if (replacePendingImageStatus || !visibleStreamingRef.current) {
-            typingQueueRef.current = [];
-            visibleStreamingRef.current = '';
-            streamingStore.set('');
-            typingQueueRef.current.push(...Array.from(streamingRef.current));
-            startTyping();
-          }
+        const errorMessage = getApiErrorMessage(error, '聊天服务暂时不可用');
+        const replacePendingImageStatus = streamingRef.current === '正在生成图片…';
+        if (replacePendingImageStatus || !streamingRef.current) {
+          streamingRef.current = `抱歉，${errorMessage}`;
+        }
+        if (replacePendingImageStatus || !visibleStreamingRef.current) {
+          typingQueueRef.current = [];
+          visibleStreamingRef.current = '';
+          streamingStore.set('');
+          typingQueueRef.current.push(...Array.from(streamingRef.current));
+          startTyping();
         }
       } finally {
         await waitForTypingDrain();
 
-        const finalContent = generatedImage ? '' : streamingRef.current || '抱歉，聊天服务未返回内容，请重试。';
-        if (!recoveredFromServer) {
-          setMessages((current) =>
-            current.map((message) =>
-              message.id === assistantMessage.id
-                ? { ...message, content: finalContent, aiInfo }
-                : message.id === userMessage.id
-                  ? { ...message, aiInfo }
-                  : message,
-            ),
-          );
+        // 图片与附件先持久化后才发送 image.generated。流结束时从历史回填，避免临时
+        // 消息与服务端 messageId 不一致而使图片组件没有被挂载；不得阻塞输入。
+        if (generatedImage) {
+          void getChatHistory(conversationId)
+            .then(mapHistoryMessages)
+            .then((history) => {
+              const latestUserMessage = [...history].reverse().find((message) => message.role === 'user');
+              if (latestUserMessage?.content === content) setMessages(history);
+            })
+            .catch((error) => console.warn('Failed to reconcile generated image history', error));
         }
+
+        const finalContent = generatedImage ? '' : streamingRef.current || '抱歉，聊天服务未返回内容，请重试。';
+        setMessages((current) =>
+          current.map((message) =>
+            message.id === assistantMessage.id
+              ? { ...message, content: finalContent, aiInfo }
+              : message.id === userMessage.id
+                ? { ...message, aiInfo }
+                : message,
+          ),
+        );
         streamingRef.current = '';
         visibleStreamingRef.current = '';
         typingQueueRef.current = [];
@@ -661,59 +693,15 @@ export function CompanionChatScreen({
     setKeyboardHeight(0);
     setMode('actions');
     setLocationModalVisible(true);
-    setLocationLoading(true);
-    setLocationCandidates([]);
-    setSelectedLocationId(null);
-
-    const permission = await Location.requestForegroundPermissionsAsync();
-    if (!permission.granted) {
-      setLocationLoading(false);
-      setLocationModalVisible(false);
-      Alert.alert('需要位置权限', '请允许 LumiMate 访问当前位置后再发送位置。');
-      return;
-    }
-
-    try {
-      const cachedLocation = await Location.getLastKnownPositionAsync({
-        maxAge: 60_000,
-        requiredAccuracy: 200,
-      });
-      const location =
-        cachedLocation ??
-        (await Location.getCurrentPositionAsync({
-          accuracy: Location.Accuracy.Balanced,
-        }));
-      const { latitude, longitude } = location.coords;
-      let address: Location.LocationGeocodedAddress | undefined;
-
-      try {
-        [address] = await Location.reverseGeocodeAsync({ latitude, longitude });
-      } catch {
-        address = undefined;
-      }
-
-      const candidates = createLocationCandidates(location, address);
-      setLocationCandidates(candidates);
-      setSelectedLocationId(candidates[0]?.id ?? null);
-    } catch (error) {
-      console.warn('Failed to share location', error);
-      setLocationModalVisible(false);
-      Alert.alert('定位失败', '暂时无法获取当前位置，请稍后再试。');
-    } finally {
-      setLocationLoading(false);
-    }
   }, []);
 
-  const sendSelectedLocation = useCallback(async () => {
-    const selectedLocation = locationCandidates.find((item) => item.id === selectedLocationId);
-    if (!selectedLocation) return;
-
+  const sendSelectedLocation = useCallback(async (selectedLocation: LocationCandidate) => {
     setLocationModalVisible(false);
     await appendUserTurn({
       content: `位置：${selectedLocation.name}\n${selectedLocation.detail}\n${selectedLocation.coordinateText}`,
       modeAfterSend: 'actions',
     });
-  }, [appendUserTurn, locationCandidates, selectedLocationId]);
+  }, [appendUserTurn]);
 
   const dismissInputAccessory = useCallback(() => {
     if (mode === 'idle' && keyboardHeight <= 0) return;
@@ -1019,10 +1007,6 @@ export function CompanionChatScreen({
       <GeneratedImagePreviewModal imageUri={previewImageUri} onClose={() => setPreviewImageUri(null)} />
       <LocationPickerModal
         visible={locationModalVisible}
-        loading={locationLoading}
-        candidates={locationCandidates}
-        selectedId={selectedLocationId}
-        onSelect={setSelectedLocationId}
         onClose={() => setLocationModalVisible(false)}
         onSend={sendSelectedLocation}
       />
@@ -1150,40 +1134,210 @@ function ImagePreviewModal({
 
 function LocationPickerModal({
   visible,
-  loading,
-  candidates,
-  selectedId,
-  onSelect,
   onClose,
   onSend,
 }: {
   visible: boolean;
-  loading: boolean;
-  candidates: LocationCandidate[];
-  selectedId: string | null;
-  onSelect: (id: string) => void;
   onClose: () => void;
-  onSend: () => void;
+  onSend: (location: LocationCandidate) => void;
 }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
-  const selectedLocation = candidates.find((item) => item.id === selectedId);
+  const mapRef = useRef<MapViewRef>(null);
+  const [currentLocation, setCurrentLocation] = useState(DEFAULT_LOCATION);
+  const [candidates, setCandidates] = useState<LocationCandidate[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [query, setQuery] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [searching, setSearching] = useState(false);
+  const [message, setMessage] = useState('');
+  const [mapReady, setMapReady] = useState(false);
+  const selectedLocation = candidates.find((item) => item.id === selectedId) ?? null;
+
+  const moveMapCamera = useCallback(async (target: { latitude: number; longitude: number }, zoom = 16) => {
+    await mapRef.current?.moveCamera({ target, zoom }, 280);
+  }, []);
+
+  const loadCandidates = useCallback(async (target: { latitude: number; longitude: number }) => {
+    setLoading(true);
+    setMessage('');
+    try {
+      const result = await withGaodeTimeout(
+        reGeocode({ location: target, radius: 1000 }),
+        '附近地点加载',
+      );
+      const nearby = result.pois.map(toLocationCandidate);
+      const address = result.formattedAddress || '当前位置';
+      const current: LocationCandidate = {
+        id: `current-${target.latitude.toFixed(6)}-${target.longitude.toFixed(6)}`,
+        name: result.pois[0]?.name || '当前位置',
+        detail: `当前位置 | ${address}`,
+        coordinateText: `${target.latitude.toFixed(6)}, ${target.longitude.toFixed(6)}`,
+        latitude: target.latitude,
+        longitude: target.longitude,
+      };
+      const next = [current, ...nearby.filter((item) => item.id !== result.pois[0]?.id)];
+      setCandidates(next);
+      setSelectedId(current.id);
+    } catch (error) {
+      console.warn('Failed to load nearby Gaode POIs', error);
+      const fallback: LocationCandidate = {
+        id: `coordinate-${target.latitude.toFixed(6)}-${target.longitude.toFixed(6)}`,
+        name: '当前位置',
+        detail: '当前坐标',
+        coordinateText: `${target.latitude.toFixed(6)}, ${target.longitude.toFixed(6)}`,
+        latitude: target.latitude,
+        longitude: target.longitude,
+      };
+      setCandidates([fallback]);
+      setSelectedId(fallback.id);
+      setMessage('附近地点暂时不可用，仍可发送当前坐标');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const locateCurrentPosition = useCallback(async () => {
+    if (Platform.OS === 'web') {
+      setMessage('高德地图仅支持 iOS / Android 原生构建');
+      return;
+    }
+
+    setLoading(true);
+    setMessage('');
+    try {
+      ensureGaodePrivacyReady();
+      let permission = await withGaodeTimeout(
+        ExpoGaodeMapModule.checkLocationPermission(),
+        '位置权限检查',
+      );
+      if (!permission.granted) {
+        permission = await withGaodeTimeout(
+          ExpoGaodeMapModule.requestLocationPermission(),
+          '位置权限请求',
+        );
+      }
+      if (!permission.granted) {
+        setMessage('需要允许位置权限后才能发送当前位置');
+        return;
+      }
+      ExpoGaodeMapModule.start();
+      const target = await getCurrentGaodeLocation();
+      setCurrentLocation(target);
+      await moveMapCamera(target);
+      await loadCandidates(target);
+    } catch (error) {
+      console.warn('Failed to locate with Gaode map', error);
+      const detail = error instanceof Error ? error.message : '';
+      setMessage(
+        detail.includes('超时')
+          ? '未能获取当前位置，请确认系统定位服务已开启后重试'
+          : '定位失败，请在系统设置中允许 LumiMate 使用位置后重试',
+      );
+    } finally {
+      setLoading(false);
+    }
+  }, [loadCandidates, moveMapCamera]);
+
+  useEffect(() => {
+    if (!visible) return undefined;
+    const frame = requestAnimationFrame(() => {
+      void locateCurrentPosition();
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      if (Platform.OS !== 'web') ExpoGaodeMapModule.stop();
+    };
+  }, [locateCurrentPosition, visible]);
+
+  // 定位与原生 MapView 的加载没有先后保证。若定位先返回，等地图就绪后补一次相机移动。
+  useEffect(() => {
+    if (!visible || !mapReady || Platform.OS === 'web') return;
+    void moveMapCamera(currentLocation).catch(() => undefined);
+  }, [currentLocation, mapReady, moveMapCamera, visible]);
+
+  useEffect(() => {
+    if (!visible || !query.trim()) return;
+    let active = true;
+    const timer = setTimeout(() => {
+      setSearching(true);
+      setMessage('');
+      void withGaodeTimeout(
+        searchPOI({
+          keyword: query.trim(),
+          center: currentLocation,
+          sortByDistance: true,
+          pageSize: 20,
+        }),
+        '地点搜索',
+      )
+        .then((result) => {
+          if (!active) return;
+          const next = result.pois.map(toLocationCandidate);
+          setCandidates(next);
+          setSelectedId(next[0]?.id ?? null);
+          if (!next.length) setMessage('未找到匹配地点');
+        })
+        .catch((error) => {
+          console.warn('Failed to search Gaode POIs', error);
+          if (active) setMessage('地点搜索失败，请稍后重试');
+        })
+        .finally(() => active && setSearching(false));
+    }, 260);
+    return () => {
+      active = false;
+      clearTimeout(timer);
+    };
+  }, [currentLocation, query, visible]);
+
+  const selectCandidate = useCallback((candidate: LocationCandidate) => {
+    setSelectedId(candidate.id);
+    void moveMapCamera({ latitude: candidate.latitude, longitude: candidate.longitude });
+  }, [moveMapCamera]);
+
+  const selectCoordinate = useCallback((coordinate: { latitude: number; longitude: number }) => {
+    setCurrentLocation(coordinate);
+    setQuery('');
+    void loadCandidates(coordinate);
+  }, [loadCandidates]);
+
+  if (Platform.OS !== 'web') ensureGaodePrivacyReady();
 
   return (
     <Modal visible={visible} animationType="slide" transparent={false} onRequestClose={onClose}>
       <View style={[styles.locationPreview, { backgroundColor: theme.background }]}>
         <View style={styles.locationMap}>
-          {selectedLocation?.mapTileUri ? (
-            <Image
-              source={{ uri: selectedLocation.mapTileUri }}
-              style={styles.mapTile}
-              resizeMode="cover"
-            />
-          ) : null}
-          <View style={[styles.mapPinOuter, { backgroundColor: theme.backgroundSelected }]}>
-            <View style={styles.mapPinInner} />
-          </View>
-          <Pressable accessibilityRole="button" accessibilityLabel="重新定位" style={styles.locateButton}>
+          {Platform.OS === 'web' ? (
+            <View style={[styles.locationMapFallback, { backgroundColor: theme.backgroundElement }]}>
+              <ThemedText type="small" themeColor="textSecondary">高德地图仅支持原生 App</ThemedText>
+            </View>
+          ) : (
+            <MapView
+              ref={mapRef}
+              style={styles.locationNativeMap}
+              mapType={MapType.Standard}
+              initialCameraPosition={{ target: currentLocation, zoom: 15 }}
+              myLocationEnabled
+              followUserLocation={false}
+              compassEnabled={false}
+              zoomControlsEnabled={false}
+              scaleControlsEnabled
+              onLoad={() => setMapReady(true)}
+              onMapPress={(event) => selectCoordinate(event.nativeEvent)}>
+              {selectedLocation ? (
+                <Marker
+                  position={{ latitude: selectedLocation.latitude, longitude: selectedLocation.longitude }}
+                  title={selectedLocation.name}
+                  pinColor="green"
+                />
+              ) : null}
+            </MapView>
+          )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="重新定位"
+            onPress={() => void locateCurrentPosition()}
+            style={styles.locateButton}>
             <SymbolView name={{ ios: 'location.fill', android: 'my_location', web: 'my_location' }} size={22} tintColor="#208AEF" />
           </Pressable>
         </View>
@@ -1196,7 +1350,7 @@ function LocationPickerModal({
             accessibilityRole="button"
             accessibilityLabel="发送位置"
             disabled={!selectedLocation || loading}
-            onPress={onSend}
+            onPress={() => selectedLocation && onSend(selectedLocation)}
             style={[styles.locationSendButton, !selectedLocation || loading ? styles.disabled : null]}>
             <ThemedText style={styles.locationSendText}>发送</ThemedText>
           </Pressable>
@@ -1206,11 +1360,17 @@ function LocationPickerModal({
           <View style={[styles.locationSearch, { backgroundColor: theme.backgroundElement }]}>
             <SymbolView name={{ ios: 'magnifyingglass', android: 'search', web: 'search' }} size={18} tintColor={theme.textSecondary} />
             <TextInput
-              editable={false}
+              value={query}
+              onChangeText={(text) => {
+                setQuery(text);
+                if (!text.trim()) void loadCandidates(currentLocation);
+              }}
               placeholder="搜索地点"
               placeholderTextColor={theme.textSecondary}
+              returnKeyType="search"
               style={[styles.locationSearchText, { color: theme.text }]}
             />
+            {searching ? <ActivityIndicator size="small" color="#208AEF" /> : null}
           </View>
 
           {loading ? (
@@ -1219,12 +1379,13 @@ function LocationPickerModal({
               <ThemedText type="small" themeColor="textSecondary">正在定位</ThemedText>
             </View>
           ) : candidates.length > 0 ? (
-            candidates.map((candidate) => (
+            <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={styles.locationResults}>
+              {candidates.map((candidate) => (
               <Pressable
                 key={candidate.id}
                 accessibilityRole="button"
                 accessibilityLabel={`选择位置 ${candidate.name}`}
-                onPress={() => onSelect(candidate.id)}
+                onPress={() => selectCandidate(candidate)}
                 style={({ pressed }) => [styles.locationRow, pressed ? styles.pressed : null]}>
                 <View style={styles.locationTextBlock}>
                   <ThemedText style={styles.locationName} numberOfLines={1}>{candidate.name}</ThemedText>
@@ -1236,10 +1397,12 @@ function LocationPickerModal({
                   <SymbolView name={{ ios: 'checkmark', android: 'check', web: 'check' }} size={22} tintColor="#208AEF" />
                 ) : null}
               </Pressable>
-            ))
+              ))}
+              {message ? <ThemedText type="small" themeColor="textSecondary" style={styles.locationMessage}>{message}</ThemedText> : null}
+            </ScrollView>
           ) : (
             <View style={styles.locationLoading}>
-              <ThemedText type="small" themeColor="textSecondary">未获取到当前位置</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">{message || '未获取到当前位置'}</ThemedText>
             </View>
           )}
         </View>
@@ -1542,38 +1705,19 @@ const styles = StyleSheet.create({
     backgroundColor: '#E8EEF2',
     overflow: 'hidden',
   },
-  mapTile: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    top: 0,
-    bottom: 0,
+  locationNativeMap: {
     width: '100%',
     height: '100%',
   },
-  mapPinOuter: {
-    position: 'absolute',
-    left: '50%',
-    top: '43%',
-    width: 52,
-    height: 52,
-    borderRadius: 26,
+  locationMapFallback: {
+    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    transform: [{ translateX: -26 }, { translateY: -26 }],
-  },
-  mapPinInner: {
-    width: 18,
-    height: 18,
-    borderRadius: 9,
-    backgroundColor: '#208AEF',
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
   },
   locateButton: {
     position: 'absolute',
     left: Spacing.three,
-    bottom: Spacing.three,
+    bottom: Spacing.four,
     width: 48,
     height: 48,
     borderRadius: 8,
@@ -1621,7 +1765,7 @@ const styles = StyleSheet.create({
   },
   locationSheet: {
     flex: 1,
-    marginTop: -18,
+    marginTop: 0,
     borderTopLeftRadius: 14,
     borderTopRightRadius: 14,
     paddingTop: Spacing.three,
@@ -1646,6 +1790,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Spacing.two,
+  },
+  locationResults: {
+    paddingBottom: Spacing.four,
+  },
+  locationMessage: {
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.two,
   },
   locationRow: {
     minHeight: 72,

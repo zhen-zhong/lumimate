@@ -17,11 +17,14 @@ import { ThemedText } from '@/components/themed-text';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import {
+  archiveCompanionMemory,
   confirmCompanionMemory,
   getCompanionMemories,
+  getCompanionMemoryProvenance,
   getCompanionRelationship,
   removeCompanionMemory,
   type CompanionMemory,
+  type CompanionMemoryProvenance,
   type CompanionRelationship,
   updateCompanionMemory,
   updateCompanionRelationship,
@@ -58,6 +61,7 @@ export default function CompanionMemoryScreen() {
   const [editing, setEditing] = useState<CompanionMemory | null>(null);
   const [draftContent, setDraftContent] = useState('');
   const [savingMemory, setSavingMemory] = useState(false);
+  const [provenance, setProvenance] = useState<CompanionMemoryProvenance | null>(null);
 
   const candidates = useMemo(
     () => memories.filter((memory) => memory.status === 'CANDIDATE'),
@@ -65,6 +69,10 @@ export default function CompanionMemoryScreen() {
   );
   const confirmed = useMemo(
     () => memories.filter((memory) => memory.status === 'CONFIRMED'),
+    [memories],
+  );
+  const archived = useMemo(
+    () => memories.filter((memory) => memory.status === 'ARCHIVED'),
     [memories],
   );
 
@@ -111,6 +119,28 @@ export default function CompanionMemoryScreen() {
         },
       },
     ]);
+  }, [conversationId]);
+
+  const archive = useCallback((memory: CompanionMemory) => {
+    Alert.alert('归档这条记忆？', '归档后不会再作为陪伴上下文使用，之后仍可查看来源。', [
+      { text: '取消', style: 'cancel' },
+      {
+        text: '归档',
+        onPress: () => {
+          void archiveCompanionMemory(conversationId, memory.id)
+            .then((next) => setMemories((current) => current.map((item) => item.id === next.id ? next : item)))
+            .catch((error: unknown) => Alert.alert('无法归档记忆', getApiErrorMessage(error, '操作失败')));
+        },
+      },
+    ]);
+  }, [conversationId]);
+
+  const openProvenance = useCallback(async (memory: CompanionMemory) => {
+    try {
+      setProvenance(await getCompanionMemoryProvenance(conversationId, memory.id));
+    } catch (error) {
+      Alert.alert('无法读取记忆来源', getApiErrorMessage(error, '读取来源失败'));
+    }
   }, [conversationId]);
 
   const saveRelationship = useCallback(async () => {
@@ -180,13 +210,18 @@ export default function CompanionMemoryScreen() {
 
             <SectionTitle title="待确认" subtitle={`${candidates.length} 条`} />
             {candidates.length ? candidates.map((memory) => (
-              <MemoryCard key={memory.id} memory={memory} theme={theme} onConfirm={() => void confirm(memory)} onEdit={() => openEdit(memory)} onRemove={() => remove(memory)} />
+              <MemoryCard key={memory.id} memory={memory} theme={theme} onConfirm={() => void confirm(memory)} onEdit={() => openEdit(memory)} onArchive={() => archive(memory)} onProvenance={() => void openProvenance(memory)} onRemove={() => remove(memory)} />
             )) : <EmptyCard text="暂时没有候选记忆。聊天里说“请记住…”后，会先出现在这里。" theme={theme} />}
 
             <SectionTitle title="已确认" subtitle={`${confirmed.length} 条`} />
             {confirmed.length ? confirmed.map((memory) => (
-              <MemoryCard key={memory.id} memory={memory} theme={theme} onEdit={() => openEdit(memory)} onRemove={() => remove(memory)} />
+              <MemoryCard key={memory.id} memory={memory} theme={theme} onEdit={() => openEdit(memory)} onArchive={() => archive(memory)} onProvenance={() => void openProvenance(memory)} onRemove={() => remove(memory)} />
             )) : <EmptyCard text="还没有已确认的长期记忆。" theme={theme} />}
+
+            <SectionTitle title="已归档" subtitle={`${archived.length} 条`} />
+            {archived.length ? archived.map((memory) => (
+              <MemoryCard key={memory.id} memory={memory} theme={theme} onEdit={() => openEdit(memory)} onProvenance={() => void openProvenance(memory)} onRemove={() => remove(memory)} />
+            )) : <EmptyCard text="没有已归档的记忆。" theme={theme} />}
           </ScrollView>
         )}
       </SafeAreaView>
@@ -194,7 +229,7 @@ export default function CompanionMemoryScreen() {
       <Modal transparent animationType="fade" visible={Boolean(editing)} onRequestClose={() => setEditing(null)}>
         <View style={styles.modalRoot}>
           <Pressable style={styles.modalBackdrop} onPress={() => setEditing(null)} />
-          <View style={[styles.editor, { backgroundColor: theme.background }]}> 
+          <View style={[styles.editor, { backgroundColor: theme.background }]}>
             <ThemedText type="subtitle">编辑记忆</ThemedText>
             <ThemedText type="small" themeColor="textSecondary">保存后会确认这条记忆。</ThemedText>
             <TextInput
@@ -216,6 +251,23 @@ export default function CompanionMemoryScreen() {
           </View>
         </View>
       </Modal>
+
+      <Modal transparent animationType="fade" visible={Boolean(provenance)} onRequestClose={() => setProvenance(null)}>
+        <View style={styles.modalRoot}>
+          <Pressable style={styles.modalBackdrop} onPress={() => setProvenance(null)} />
+          <View style={[styles.editor, { backgroundColor: theme.background }]}>
+            <ThemedText type="subtitle">为什么记住</ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {provenance?.source ? `来自 ${new Date(provenance.source.createdAt).toLocaleString('zh-CN')} 的对话：` : '这条记忆没有保留可读取的来源消息。'}
+            </ThemedText>
+            {provenance?.source ? <View style={[styles.sourceBox, { backgroundColor: theme.backgroundElement }]}><ThemedText type="small">{provenance.source.content}</ThemedText></View> : null}
+            {provenance?.supersededBy ? <ThemedText type="small" themeColor="textSecondary">已被“{provenance.supersededBy.content}”替代。</ThemedText> : null}
+            <View style={styles.modalActions}>
+              <Pressable accessibilityRole="button" accessibilityLabel="关闭记忆来源" onPress={() => setProvenance(null)} style={[styles.cancelButton, { backgroundColor: theme.backgroundElement }]}><ThemedText type="smallBold">关闭</ThemedText></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </>
   );
 }
@@ -228,14 +280,16 @@ function ProfileInput({ label, value, onChangeText, placeholder, theme }: { labe
   return <View style={styles.profileInput}><ThemedText type="smallBold">{label}</ThemedText><TextInput value={value} onChangeText={onChangeText} placeholder={placeholder} placeholderTextColor={theme.textSecondary} maxLength={160} style={[styles.profileTextInput, { color: theme.text }]} /></View>;
 }
 
-function MemoryCard({ memory, theme, onConfirm, onEdit, onRemove }: { memory: CompanionMemory; theme: ReturnType<typeof useTheme>; onConfirm?: () => void; onEdit: () => void; onRemove: () => void }) {
+function MemoryCard({ memory, theme, onConfirm, onEdit, onArchive, onProvenance, onRemove }: { memory: CompanionMemory; theme: ReturnType<typeof useTheme>; onConfirm?: () => void; onEdit: () => void; onArchive?: () => void; onProvenance: () => void; onRemove: () => void }) {
   return (
     <View style={[styles.memoryCard, { backgroundColor: theme.backgroundElement }]}>
       <View style={styles.memoryHeader}><View style={[styles.categoryChip, { backgroundColor: theme.primarySurface }]}><ThemedText type="smallBold" style={[styles.categoryText, { color: theme.primary }]}>{CATEGORY_LABEL[memory.category]}</ThemedText></View><ThemedText type="small" themeColor="textSecondary">{new Date(memory.updatedAt).toLocaleDateString('zh-CN')}</ThemedText></View>
       <ThemedText style={styles.memoryContent}>{memory.content}</ThemedText>
       <View style={styles.memoryActions}>
         {onConfirm ? <Pressable accessibilityRole="button" accessibilityLabel="确认记忆" onPress={onConfirm} style={[styles.primaryAction, { backgroundColor: theme.primary }]}><ThemedText type="smallBold" style={styles.primaryActionText}>确认</ThemedText></Pressable> : null}
+        <Pressable accessibilityRole="button" accessibilityLabel="查看记忆来源" onPress={onProvenance} style={styles.textAction}><ThemedText type="smallBold" style={{ color: theme.primary }}>来源</ThemedText></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="编辑记忆" onPress={onEdit} style={[styles.secondaryAction, { backgroundColor: theme.background }]}><ThemedText type="smallBold">编辑</ThemedText></Pressable>
+        {onArchive ? <Pressable accessibilityRole="button" accessibilityLabel="归档记忆" onPress={onArchive} style={styles.textAction}><ThemedText type="smallBold" themeColor="textSecondary">归档</ThemedText></Pressable> : null}
         <Pressable accessibilityRole="button" accessibilityLabel="删除记忆" onPress={onRemove} style={styles.iconAction}><SymbolView name={{ ios: 'trash', android: 'delete_outline', web: 'delete_outline' }} size={17} tintColor={theme.danger} /></Pressable>
       </View>
     </View>
@@ -269,6 +323,7 @@ const styles = StyleSheet.create({
   primaryAction: { alignItems: 'center', borderRadius: 10, minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.two },
   primaryActionText: { color: '#FFFFFF' },
   secondaryAction: { alignItems: 'center', borderRadius: 10, minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.two },
+  textAction: { alignItems: 'center', minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.one },
   iconAction: { alignItems: 'center', height: 44, justifyContent: 'center', width: 44 },
   emptyCard: { borderRadius: 18, padding: Spacing.three },
   emptyText: { lineHeight: 20 },
@@ -276,6 +331,7 @@ const styles = StyleSheet.create({
   modalBackdrop: { ...StyleSheet.absoluteFill, backgroundColor: 'rgba(8,16,32,0.48)' },
   editor: { borderRadius: 22, gap: Spacing.two, maxWidth: 480, padding: Spacing.three, width: '100%' },
   editorInput: { borderRadius: 14, borderWidth: StyleSheet.hairlineWidth, fontSize: 16, minHeight: 130, padding: Spacing.two, textAlignVertical: 'top' },
+  sourceBox: { borderRadius: 12, maxHeight: 180, padding: Spacing.two },
   modalActions: { flexDirection: 'row', gap: Spacing.two, justifyContent: 'flex-end' },
   cancelButton: { alignItems: 'center', borderRadius: 11, minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.three },
   confirmButton: { alignItems: 'center', borderRadius: 11, minHeight: 44, justifyContent: 'center', minWidth: 106, paddingHorizontal: Spacing.two },
