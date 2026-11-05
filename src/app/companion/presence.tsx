@@ -1,10 +1,10 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { SymbolView } from 'expo-symbols';
 import { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { CompanionIllustration } from '@/components/companion-illustration';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { getCompanionPresence, type CompanionPresence } from '@/services/chat-api';
@@ -38,9 +38,7 @@ export default function CompanionPresenceScreen() {
         {loading || !presence ? <View style={styles.loading}><ActivityIndicator color={theme.primary} /></View> : (
           <ScrollView contentContainerStyle={styles.content}>
             <View style={[styles.hero, { backgroundColor: theme.backgroundElement }]}>
-              <View style={[styles.icon, { backgroundColor: theme.primarySurface }]}>
-                <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={24} tintColor={theme.primary} />
-              </View>
+              <CompanionIllustration variant="presence" size={96} />
               <ThemedText type="subtitle">{presence.activityLabel}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
                 {presence.nextPlan ?? '没有待办状态'}
@@ -75,7 +73,6 @@ const styles = StyleSheet.create({
   loading: { alignItems: 'center', flex: 1, justifyContent: 'center' },
   content: { alignSelf: 'center', gap: Spacing.two, maxWidth: MaxContentWidth, padding: Spacing.three, width: '100%' },
   hero: { alignItems: 'center', borderRadius: 20, gap: Spacing.two, padding: Spacing.four },
-  icon: { alignItems: 'center', borderRadius: 20, height: 48, justifyContent: 'center', width: 48 },
   centerText: { textAlign: 'center' },
   notice: { borderRadius: 14, padding: Spacing.two },
   sectionTitle: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.two, paddingHorizontal: Spacing.one },

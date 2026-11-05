@@ -14,6 +14,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { CompanionIllustration } from '@/components/companion-illustration';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import {
@@ -187,6 +188,13 @@ export default function CompanionMemoryScreen() {
           <View style={styles.loading}><ActivityIndicator color={theme.primary} /></View>
         ) : (
           <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+            <View style={[styles.memoryHero, { backgroundColor: theme.primarySurface }]}>
+              <View style={styles.memoryHeroCopy}>
+                <ThemedText type="default">由你决定，什么值得被记住</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">确认、查看来源、归档或删除，都由你掌控。</ThemedText>
+              </View>
+              <CompanionIllustration variant="memory" size={86} />
+            </View>
             <View style={[styles.notice, { backgroundColor: theme.backgroundElement }]}>
               <View style={[styles.noticeIcon, { backgroundColor: theme.primarySurface }]}>
                 <SymbolView name={{ ios: 'lock.fill', android: 'lock', web: 'lock' }} size={15} tintColor={theme.primary} />
@@ -304,6 +312,8 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { width: '100%', maxWidth: MaxContentWidth, alignSelf: 'center', gap: Spacing.two, padding: Spacing.three, paddingBottom: 40 },
+  memoryHero: { alignItems: 'center', borderRadius: 18, flexDirection: 'row', minHeight: 112, overflow: 'hidden', paddingLeft: Spacing.three, paddingRight: Spacing.two },
+  memoryHeroCopy: { flex: 1, gap: 6, paddingVertical: Spacing.three },
   notice: { alignItems: 'flex-start', borderRadius: 14, flexDirection: 'row', gap: Spacing.two, padding: Spacing.two },
   noticeIcon: { alignItems: 'center', borderRadius: 10, height: 30, justifyContent: 'center', width: 30 },
   noticeText: { flex: 1, lineHeight: 19, paddingTop: 4 },

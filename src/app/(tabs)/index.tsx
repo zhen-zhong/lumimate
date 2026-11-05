@@ -5,6 +5,7 @@ import { ActivityIndicator, Pressable, RefreshControl, ScrollView, StyleSheet, V
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
+import { CompanionIllustration } from '@/components/companion-illustration';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { CompanionChats } from '@/data/companion-chats';
 import {
@@ -153,6 +154,9 @@ export default function HomeScreen() {
             accessibilityLabel={`与 ${settings.agentName} 继续聊天`}
             onPress={openChat}
             style={({ pressed }) => [styles.heroCard, { backgroundColor: theme.primary }, pressed ? styles.pressed : null]}>
+            <View style={styles.heroIllustration}>
+              <CompanionIllustration variant="home" size={118} />
+            </View>
             <View style={styles.heroTopRow}>
               <View style={styles.heroAvatar}>
                 <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={22} tintColor={theme.primary} />
@@ -234,13 +238,14 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.three },
   greeting: { marginTop: Spacing.one },
   headerButton: { width: 42, height: 42, borderRadius: 21, borderWidth: StyleSheet.hairlineWidth, alignItems: 'center', justifyContent: 'center' },
-  heroCard: { minHeight: 222, borderRadius: 24, padding: Spacing.four, justifyContent: 'space-between' },
+  heroCard: { minHeight: 222, borderRadius: 24, overflow: 'hidden', padding: Spacing.four, justifyContent: 'space-between' },
+  heroIllustration: { bottom: 10, position: 'absolute', right: 12 },
   heroTopRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   heroAvatar: { width: 46, height: 46, borderRadius: 15, backgroundColor: '#FFFFFF', alignItems: 'center', justifyContent: 'center' },
   heroStatus: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderRadius: 20, backgroundColor: 'rgba(255,255,255,0.16)', paddingHorizontal: 10, paddingVertical: 6 },
   heroStatusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: '#B6F4D0' },
   heroStatusText: { color: '#FFFFFF' },
-  heroCopy: { gap: Spacing.one },
+  heroCopy: { gap: Spacing.one, maxWidth: '68%' },
   heroName: { color: '#FFFFFF', fontSize: 21, fontWeight: 700, lineHeight: 28 },
   heroMessage: { color: 'rgba(255,255,255,0.86)', fontSize: 17, lineHeight: 25, fontWeight: 500 },
   heroAction: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: Spacing.two },
