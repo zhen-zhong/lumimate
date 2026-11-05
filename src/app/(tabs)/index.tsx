@@ -155,7 +155,7 @@ export default function HomeScreen() {
             onPress={openChat}
             style={({ pressed }) => [styles.heroCard, { backgroundColor: theme.primary }, pressed ? styles.pressed : null]}>
             <View style={styles.heroIllustration}>
-              <CompanionIllustration variant="home" size={118} />
+              <CompanionIllustration size={118} />
             </View>
             <View style={styles.heroTopRow}>
               <View style={styles.heroAvatar}>

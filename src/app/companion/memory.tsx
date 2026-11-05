@@ -193,7 +193,7 @@ export default function CompanionMemoryScreen() {
                 <ThemedText type="default">由你决定，什么值得被记住</ThemedText>
                 <ThemedText type="small" themeColor="textSecondary">确认、查看来源、归档或删除，都由你掌控。</ThemedText>
               </View>
-              <CompanionIllustration variant="memory" size={86} />
+              <CompanionIllustration size={86} />
             </View>
             <View style={[styles.notice, { backgroundColor: theme.backgroundElement }]}>
               <View style={[styles.noticeIcon, { backgroundColor: theme.primarySurface }]}>

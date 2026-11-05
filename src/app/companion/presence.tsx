@@ -38,7 +38,7 @@ export default function CompanionPresenceScreen() {
         {loading || !presence ? <View style={styles.loading}><ActivityIndicator color={theme.primary} /></View> : (
           <ScrollView contentContainerStyle={styles.content}>
             <View style={[styles.hero, { backgroundColor: theme.backgroundElement }]}>
-              <CompanionIllustration variant="presence" size={96} />
+              <CompanionIllustration size={96} />
               <ThemedText type="subtitle">{presence.activityLabel}</ThemedText>
               <ThemedText type="small" themeColor="textSecondary" style={styles.centerText}>
                 {presence.nextPlan ?? '没有待办状态'}
