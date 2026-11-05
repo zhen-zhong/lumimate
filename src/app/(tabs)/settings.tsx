@@ -78,11 +78,18 @@ export default function SettingsScreen() {
 
           <View style={styles.sectionHeader}><ThemedText type="smallBold" themeColor="textSecondary">关于</ThemedText></View>
           <View style={[styles.groupCard, { backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }]}>
-            <View style={styles.infoRow}>
-              <View style={[styles.rowIcon, { backgroundColor: theme.primarySurface }]}><SymbolView name={{ ios: 'shield.lefthalf.filled', android: 'shield', web: 'shield' }} size={18} tintColor={theme.primary} /></View>
-              <View style={styles.rowCopy}><ThemedText type="smallBold">隐私与数据</ThemedText><ThemedText type="small" themeColor="textSecondary">聊天媒体受会话鉴权保护</ThemedText></View>
-            </View>
-            <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+            <SettingsRow
+              icon={{ ios: 'hand.raised.fill', android: 'privacy_tip', web: 'privacy_tip' }}
+              title="隐私政策"
+              detail="了解信息如何被处理和保护"
+              onPress={() => router.push('/legal/privacy-policy' as never)}
+            />
+            <SettingsRow
+              icon={{ ios: 'slider.horizontal.3', android: 'tune', web: 'tune' }}
+              title="用户隐私选择"
+              detail="管理记忆、权限、通知与删除请求"
+              onPress={() => router.push('/legal/privacy-choices' as never)}
+            />
             <View style={styles.infoRow}>
               <View style={[styles.rowIcon, { backgroundColor: theme.primarySurface }]}><SymbolView name={{ ios: 'info.circle.fill', android: 'info', web: 'info' }} size={18} tintColor={theme.primary} /></View>
               <View style={styles.rowCopy}><ThemedText type="smallBold">LumiMate</ThemedText><ThemedText type="small" themeColor="textSecondary">版本 {version}</ThemedText></View>

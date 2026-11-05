@@ -45,6 +45,7 @@ export default function RootLayout() {
           <Stack.Screen name="companion/presence" />
           <Stack.Screen name="companion/tasks" />
           <Stack.Screen name="companion/skills" />
+          <Stack.Screen name="legal/[document]" />
         </Stack>
       ) : null}
     </ThemeProvider>
