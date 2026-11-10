@@ -1,5 +1,5 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -7,19 +7,24 @@ import { ThemedText } from '@/components/themed-text';
 import { CompanionIllustration } from '@/components/companion-illustration';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { getCompanionPresence, type CompanionPresence } from '@/services/chat-api';
+import { getCompanionPresence, getCompanionSharedEpisodes, type CompanionPresence, type CompanionSharedEpisode } from '@/services/chat-api';
 import { getApiErrorMessage } from '@/services/http';
 
 export default function CompanionPresenceScreen() {
   const { conversationId = 'lumimate', title = 'LumiMate' } = useLocalSearchParams<{ conversationId?: string; title?: string }>();
   const theme = useTheme();
   const [presence, setPresence] = useState<CompanionPresence | null>(null);
+  const [episodes, setEpisodes] = useState<CompanionSharedEpisode[]>([]);
+  const [briefVisible, setBriefVisible] = useState(true);
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
-    const next = await getCompanionPresence(conversationId);
+    const [next, nextEpisodes] = await Promise.all([getCompanionPresence(conversationId), getCompanionSharedEpisodes(conversationId)]);
     setPresence(next);
+    setEpisodes(nextEpisodes);
   }, [conversationId]);
+
+  const latestEpisode = useMemo(() => episodes.find((episode) => episode.status === 'CONFIRMED' && !episode.archivedAt) ?? null, [episodes]);
 
   useEffect(() => {
     let active = true;
@@ -51,6 +56,12 @@ export default function CompanionPresenceScreen() {
               </ThemedText>
             </View>
 
+            {briefVisible ? <View style={[styles.brief, { backgroundColor: theme.primarySurface }]}>
+              <View style={styles.briefHeading}><ThemedText type="smallBold" style={{ color: theme.primary }}>角色小报</ThemedText><Pressable accessibilityRole="button" accessibilityLabel="关闭角色小报" onPress={() => setBriefVisible(false)}><ThemedText type="smallBold" style={{ color: theme.primary }}>暂不展示</ThemedText></Pressable></View>
+              <ThemedText type="small" themeColor="textSecondary">此刻在{presence.activityLabel}。{latestEpisode ? `最近留下「${latestEpisode.title}」。` : '还没有保存共同片段。'}</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">只根据系统状态和你确认的共同经历生成；未保存为角色记忆。</ThemedText>
+            </View> : <Pressable accessibilityRole="button" onPress={() => setBriefVisible(true)} style={styles.restoreBrief}><ThemedText type="smallBold" style={{ color: theme.primary }}>显示角色小报</ThemedText></Pressable>}
+
             <View style={styles.sectionTitle}>
               <ThemedText type="smallBold" themeColor="textSecondary">近期事件</ThemedText>
               <Pressable accessibilityRole="button" accessibilityLabel="刷新陪伴状态" onPress={() => void load()}><ThemedText type="smallBold" style={{ color: theme.primary }}>刷新</ThemedText></Pressable>
@@ -75,6 +86,9 @@ const styles = StyleSheet.create({
   hero: { alignItems: 'center', borderRadius: 20, gap: Spacing.two, padding: Spacing.four },
   centerText: { textAlign: 'center' },
   notice: { borderRadius: 14, padding: Spacing.two },
+  brief: { borderRadius: 16, gap: Spacing.one, padding: Spacing.three },
+  briefHeading: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between' },
+  restoreBrief: { alignSelf: 'flex-start', minHeight: 44, justifyContent: 'center', paddingHorizontal: Spacing.one },
   sectionTitle: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.two, paddingHorizontal: Spacing.one },
   event: { borderRadius: 16, gap: 6, padding: Spacing.two },
 });
