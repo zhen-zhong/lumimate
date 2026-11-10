@@ -218,6 +218,28 @@ export type CompanionMemoryProvenance = {
   supersededBy: Pick<CompanionMemory, 'id' | 'content' | 'status' | 'updatedAt'> | null;
 };
 
+export type CompanionSharedEpisodeKind = 'TODAY_FRAGMENT' | 'UNFINISHED_THREAD' | 'SMALL_AGREEMENT';
+export type CompanionSharedEpisodeResolution = 'OPEN' | 'COMPLETED' | 'DEFERRED' | 'ABANDONED' | 'CLOSED';
+export type CompanionSharedEpisode = {
+  id: string;
+  title: string;
+  content: string;
+  status: 'CANDIDATE' | 'CONFIRMED';
+  kind: CompanionSharedEpisodeKind;
+  resolution: CompanionSharedEpisodeResolution;
+  sourceMessageId: string | null;
+  occurredAt: string;
+  archivedAt: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CompanionSharedEpisodeProvenance = {
+  episode: CompanionSharedEpisode;
+  source: { id: string; role: 'USER' | 'ASSISTANT' | 'TOOL' | 'SYSTEM'; content: string; createdAt: string } | null;
+};
+
 export type CompanionPresence = {
   activityKey: string;
   activityLabel: string;
@@ -401,6 +423,46 @@ export function archiveCompanionMemory(conversationId: string, memoryId: string)
     `/v1/chats/${encodeURIComponent(conversationId)}/memories/${encodeURIComponent(memoryId)}/archive`,
     { method: 'POST' },
   );
+}
+
+export function getCompanionSharedEpisodes(conversationId: string) {
+  return apiJson<CompanionSharedEpisode[]>(`/v1/chats/${encodeURIComponent(conversationId)}/shared-episodes`);
+}
+
+export function createCompanionSharedEpisode(
+  conversationId: string,
+  input: Pick<CompanionSharedEpisode, 'title' | 'content'> & Partial<Pick<CompanionSharedEpisode, 'kind' | 'sourceMessageId' | 'occurredAt'>>,
+) {
+  return apiJson<CompanionSharedEpisode>(`/v1/chats/${encodeURIComponent(conversationId)}/shared-episodes`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+
+export function confirmCompanionSharedEpisode(conversationId: string, episodeId: string) {
+  return apiJson<CompanionSharedEpisode>(`/v1/chats/${encodeURIComponent(conversationId)}/shared-episodes/${encodeURIComponent(episodeId)}/confirm`, { method: 'POST' });
+}
+
+export function updateCompanionSharedEpisode(
+  conversationId: string,
+  episodeId: string,
+  input: Partial<Pick<CompanionSharedEpisode, 'title' | 'content' | 'occurredAt' | 'resolution'>>,
+) {
+  return apiJson<CompanionSharedEpisode>(`/v1/chats/${encodeURIComponent(conversationId)}/shared-episodes/${encodeURIComponent(episodeId)}`, {
+    method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(input),
+  });
+}
+
+export function archiveCompanionSharedEpisode(conversationId: string, episodeId: string) {
+  return apiJson<CompanionSharedEpisode>(`/v1/chats/${encodeURIComponent(conversationId)}/shared-episodes/${encodeURIComponent(episodeId)}/archive`, { method: 'POST' });
+}
+
+export async function removeCompanionSharedEpisode(conversationId: string, episodeId: string) {
+  const response = await apiFetch(`/v1/chats/${encodeURIComponent(conversationId)}/shared-episodes/${encodeURIComponent(episodeId)}`, { method: 'DELETE' });
+  await assertApiResponse(response);
+}
+
+export function getCompanionSharedEpisodeProvenance(conversationId: string, episodeId: string) {
+  return apiJson<CompanionSharedEpisodeProvenance>(`/v1/chats/${encodeURIComponent(conversationId)}/shared-episodes/${encodeURIComponent(episodeId)}/provenance`);
 }
 
 export function getCompanionPresence(conversationId: string) {
