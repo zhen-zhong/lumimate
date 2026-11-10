@@ -153,6 +153,8 @@ export type ConversationSkillPlugin = {
 export type ChatAgentSettings = {
   agentName: string;
   agentProfile: string;
+  personaProfile: PersonaProfile | null;
+  personaVersion: number;
   responseStyle: string;
   modelId: string;
   imageModelId: string;
@@ -161,10 +163,29 @@ export type ChatAgentSettings = {
   maxContextMessageLimit: number;
 };
 
+export type PersonaProfile = {
+  identity: string;
+  temperament: string;
+  speech: string;
+  relationshipStyle: string;
+  interests: string;
+  boundaries: string;
+  examples: string[];
+};
+
+export type PersonaGenerationPreferences = {
+  relationshipType?: string;
+  activityLevel?: string;
+  speechTone?: string;
+  proactiveBoundary?: string;
+};
+
 export type UpdateChatAgentSettings = Pick<
   ChatAgentSettings,
-  'agentName' | 'agentProfile' | 'responseStyle' | 'modelId' | 'imageModelId' | 'imageUseContext' | 'contextMessageLimit'
+  'agentName' | 'agentProfile' | 'personaProfile' | 'personaVersion' | 'responseStyle' | 'modelId' | 'imageModelId' | 'imageUseContext' | 'contextMessageLimit'
 >;
+
+export type GeneratedPersonaDraft = Pick<ChatAgentSettings, 'agentName' | 'agentProfile' | 'personaProfile' | 'personaVersion' | 'responseStyle'>;
 
 export type CompanionMemoryCategory =
   | 'PREFERENCE'
@@ -298,6 +319,21 @@ export async function updateChatAgentSettings(
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(settings),
+    },
+  );
+}
+
+export function generateChatPersonaDraft(
+  conversationId: string,
+  input: Pick<GeneratedPersonaDraft, 'agentName' | 'agentProfile' | 'responseStyle'> &
+    PersonaGenerationPreferences & { modelId: string },
+) {
+  return apiJson<GeneratedPersonaDraft>(
+    `/v1/chats/${encodeURIComponent(conversationId)}/persona/draft`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
     },
   );
 }

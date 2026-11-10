@@ -21,10 +21,12 @@ import {
   getChatAgentSettings,
   getAvailableChatModels,
   getAvailableImageModels,
+  generateChatPersonaDraft,
   type ChatAgentSettings,
   type ChatModelOption,
   type CompanionProactivePolicy,
   type ImageModelOption,
+  type PersonaGenerationPreferences,
   updateCompanionProactivePolicy,
   updateChatAgentSettings,
 } from '@/services/chat-api';
@@ -34,6 +36,8 @@ import { useTheme } from '@/hooks/use-theme';
 const FALLBACK_SETTINGS: ChatAgentSettings = {
   agentName: 'LumiMate',
   agentProfile: '',
+  personaProfile: null,
+  personaVersion: 1,
   responseStyle: '温和、简洁',
   modelId: 'deepseek-flash',
   imageModelId: 'gpt-image-2.5-flare',
@@ -64,6 +68,13 @@ export default function AgentSettingsScreen() {
   const [proactivePolicy, setProactivePolicy] = useState(FALLBACK_PROACTIVE_POLICY);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [generatingPersona, setGeneratingPersona] = useState(false);
+  const [personaPreferences, setPersonaPreferences] = useState<PersonaGenerationPreferences>({
+    relationshipType: '可靠朋友，熟悉后可以更自然一点',
+    activityLevel: '自然，不频繁主动打扰',
+    speechTone: '克制、真诚、有一点俏皮',
+    proactiveBoundary: '只在有真实依据时轻轻联系一次，不追问',
+  });
   const [modelPickerCapability, setModelPickerCapability] = useState<'chat' | 'image-generation' | null>(null);
 
   const changeContextLimit = useCallback(
@@ -114,6 +125,8 @@ export default function AgentSettingsScreen() {
       const next = await updateChatAgentSettings(conversationId, {
         agentName: settings.agentName.trim() || FALLBACK_SETTINGS.agentName,
         agentProfile: settings.agentProfile.trim(),
+        personaProfile: settings.personaProfile,
+        personaVersion: settings.personaVersion,
         responseStyle: settings.responseStyle.trim() || FALLBACK_SETTINGS.responseStyle,
         modelId: settings.modelId,
         imageModelId: settings.imageModelId,
@@ -133,6 +146,25 @@ export default function AgentSettingsScreen() {
       setSaving(false);
     }
   }, [contextLimit, conversationId, proactivePolicy.enabled, settings]);
+
+  const generatePersona = useCallback(async () => {
+    setGeneratingPersona(true);
+    try {
+      const draft = await generateChatPersonaDraft(conversationId, {
+        modelId: settings.modelId,
+        agentName: settings.agentName.trim() || FALLBACK_SETTINGS.agentName,
+        agentProfile: settings.agentProfile.trim(),
+        responseStyle: settings.responseStyle.trim() || FALLBACK_SETTINGS.responseStyle,
+        ...personaPreferences,
+      });
+      setSettings((current) => ({ ...current, ...draft }));
+      Alert.alert('角色草稿已生成', '已填入当前页面。确认后点“保存智能体设定”才会生效。');
+    } catch (error) {
+      Alert.alert('无法生成角色草稿', getApiErrorMessage(error, '角色生成失败，请稍后重试。'));
+    } finally {
+      setGeneratingPersona(false);
+    }
+  }, [conversationId, personaPreferences, settings]);
 
   return (
     <>
@@ -174,7 +206,7 @@ export default function AgentSettingsScreen() {
                 <SettingsField icon={{ ios: 'person.fill', android: 'person', web: 'person' }} label="智能体名称" hint="聊天时怎样称呼它">
                   <TextInput
                     value={settings.agentName}
-                    onChangeText={(agentName) => setSettings((current) => ({ ...current, agentName }))}
+                    onChangeText={(agentName) => setSettings((current) => ({ ...current, agentName, personaProfile: null }))}
                     maxLength={32}
                     placeholder="LumiMate"
                     placeholderTextColor={theme.textSecondary}
@@ -185,9 +217,32 @@ export default function AgentSettingsScreen() {
                 <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
 
                 <SettingsField icon={{ ios: 'theatermasks.fill', android: 'face', web: 'face' }} label="角色设定" hint="关系、偏好、边界，都会成为陪伴线索">
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="使用当前聊天模型生成角色设定"
+                    disabled={generatingPersona}
+                    onPress={() => void generatePersona()}
+                    style={({ pressed }) => [
+                      styles.generatePersonaButton,
+                      { backgroundColor: theme.primarySurface },
+                      (pressed || generatingPersona) ? styles.pressed : null,
+                    ]}>
+                    {generatingPersona ? <ActivityIndicator size="small" color={theme.primary} /> : <SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={16} tintColor={theme.primary} />}
+                    <View style={styles.generatePersonaCopy}>
+                      <ThemedText type="smallBold" style={{ color: theme.primary }}>{generatingPersona ? '正在生成角色草稿…' : 'AI 生成角色设定'}</ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>使用当前聊天模型：{availableModels.find((model) => model.id === settings.modelId)?.label || settings.modelId}</ThemedText>
+                    </View>
+                  </Pressable>
+                  <View style={[styles.personaPreferences, { borderColor: theme.backgroundSelected, backgroundColor: theme.background }]}>
+                    <ThemedText type="smallBold" style={{ color: theme.text }}>生成偏好（可改）</ThemedText>
+                    <PersonaPreferenceInput label="关系" value={personaPreferences.relationshipType ?? ''} placeholder="例如：可靠朋友" onChangeText={(relationshipType) => setPersonaPreferences((current) => ({ ...current, relationshipType }))} theme={theme} />
+                    <PersonaPreferenceInput label="活跃度" value={personaPreferences.activityLevel ?? ''} placeholder="例如：自然，不频繁主动" onChangeText={(activityLevel) => setPersonaPreferences((current) => ({ ...current, activityLevel }))} theme={theme} />
+                    <PersonaPreferenceInput label="语气" value={personaPreferences.speechTone ?? ''} placeholder="例如：克制、真诚、有一点俏皮" onChangeText={(speechTone) => setPersonaPreferences((current) => ({ ...current, speechTone }))} theme={theme} />
+                    <PersonaPreferenceInput label="主动边界" value={personaPreferences.proactiveBoundary ?? ''} placeholder="例如：不追问、不施压" onChangeText={(proactiveBoundary) => setPersonaPreferences((current) => ({ ...current, proactiveBoundary }))} theme={theme} />
+                  </View>
                   <TextInput
                     value={settings.agentProfile}
-                    onChangeText={(agentProfile) => setSettings((current) => ({ ...current, agentProfile }))}
+                    onChangeText={(agentProfile) => setSettings((current) => ({ ...current, agentProfile, personaProfile: null }))}
                     maxLength={2000}
                     multiline
                     textAlignVertical="top"
@@ -514,6 +569,22 @@ function SettingsField({
   );
 }
 
+function PersonaPreferenceInput({ label, value, placeholder, onChangeText, theme }: { label: string; value: string; placeholder: string; onChangeText: (value: string) => void; theme: ReturnType<typeof useTheme> }) {
+  return (
+    <View style={styles.personaPreferenceRow}>
+      <ThemedText type="smallBold" themeColor="textSecondary" style={styles.personaPreferenceLabel}>{label}</ThemedText>
+      <TextInput
+        value={value}
+        onChangeText={onChangeText}
+        maxLength={120}
+        placeholder={placeholder}
+        placeholderTextColor={theme.textSecondary}
+        style={[styles.personaPreferenceInput, { color: theme.text }]}
+      />
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: { flex: 1 },
   loading: { flex: 1, alignItems: 'center', justifyContent: 'center' },
@@ -528,6 +599,12 @@ const styles = StyleSheet.create({
   sectionHeader: { alignItems: 'center', flexDirection: 'row', justifyContent: 'space-between', marginTop: Spacing.two, paddingHorizontal: Spacing.one },
   groupCard: { borderRadius: 18, overflow: 'hidden', paddingHorizontal: Spacing.three },
   field: { gap: Spacing.two, paddingVertical: Spacing.three },
+  generatePersonaButton: { alignItems: 'center', borderRadius: 12, flexDirection: 'row', gap: Spacing.two, minHeight: 58, paddingHorizontal: Spacing.two },
+  generatePersonaCopy: { flex: 1, gap: 2 },
+  personaPreferences: { borderRadius: 12, borderWidth: StyleSheet.hairlineWidth, gap: Spacing.one, padding: Spacing.two },
+  personaPreferenceRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two, minHeight: 32 },
+  personaPreferenceLabel: { width: 46 },
+  personaPreferenceInput: { flex: 1, fontSize: 14, minHeight: 32, paddingVertical: 3 },
   advancedToggle: { paddingVertical: Spacing.three },
   fieldTitleRow: { alignItems: 'center', flexDirection: 'row', gap: Spacing.two },
   fieldIcon: { alignItems: 'center', backgroundColor: '#EAF2FF', borderRadius: 9, height: 30, justifyContent: 'center', width: 30 },
