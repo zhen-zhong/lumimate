@@ -44,13 +44,12 @@ export function ChatMessageBubble({
           { borderColor: theme.backgroundSelected },
         ]}>
         {imageUri ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="预览图片"
-            onPress={onImagePress}
-            disabled={!onImagePress}>
-            <Image source={getAuthenticatedMediaSource(imageUri)} style={styles.messageImage} />
-          </Pressable>
+          <View style={styles.mediaWrap}>
+            {!isUser ? <View style={[styles.virtualChip, { backgroundColor: theme.primarySurface }]}><ThemedText type="smallBold" style={[styles.virtualChipText, { color: theme.primary }]}>虚拟角色创作</ThemedText></View> : null}
+            <Pressable accessibilityRole="button" accessibilityLabel="预览图片" onPress={onImagePress} disabled={!onImagePress}>
+              <Image source={getAuthenticatedMediaSource(imageUri)} style={styles.messageImage} />
+            </Pressable>
+          </View>
         ) : null}
         {audioUri ? (
           <VoiceMessage uri={audioUri} duration={audioDuration} isUser={isUser} />
@@ -190,6 +189,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.three,
     paddingVertical: 6,
   },
+  mediaWrap: { gap: 6 },
+  virtualChip: { alignSelf: 'flex-start', borderRadius: 7, paddingHorizontal: 7, paddingVertical: 3 },
+  virtualChipText: { fontSize: 11 },
   messageImage: {
     width: 188,
     height: 188,

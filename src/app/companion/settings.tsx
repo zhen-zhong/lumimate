@@ -322,7 +322,7 @@ export default function AgentSettingsScreen() {
                   <View style={styles.fieldTitleCopy}>
                     <ThemedText type="default">生图使用上下文</ThemedText>
                     <ThemedText type="small" themeColor="textSecondary">
-                      {settings.imageUseContext ? '参考角色档案与最近对话' : '仅依据当前这句话生成'}
+                      {settings.imageUseContext ? '参考角色档案与最近对话；仅生成虚拟角色创作' : '仅依据当前这句话生成；不代表真实照片'}
                     </ThemedText>
                   </View>
                   <Switch
