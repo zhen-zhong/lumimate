@@ -12,9 +12,13 @@ import {
   getAgentIntents,
   getChatAgentSettings,
   getCompanionProactivePolicy,
+  getCompanionPresence,
+  getCompanionSharedEpisodes,
   type AgentIntent,
   type ChatAgentSettings,
   type CompanionProactivePolicy,
+  type CompanionPresence,
+  type CompanionSharedEpisode,
 } from '@/services/chat-api';
 import { useBottomNavigationInset } from '@/hooks/use-bottom-navigation-inset';
 import { useTheme } from '@/hooks/use-theme';
@@ -81,18 +85,24 @@ export default function HomeScreen() {
   const [settings, setSettings] = useState<Pick<ChatAgentSettings, 'agentName'>>(FALLBACK_SETTINGS);
   const [policy, setPolicy] = useState(FALLBACK_POLICY);
   const [intents, setIntents] = useState<AgentIntent[]>([]);
+  const [presence, setPresence] = useState<CompanionPresence | null>(null);
+  const [episodes, setEpisodes] = useState<CompanionSharedEpisode[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
   const load = useCallback(async () => {
-    const [nextSettings, nextPolicy, nextIntents] = await Promise.all([
+    const [nextSettings, nextPolicy, nextIntents, nextPresence, nextEpisodes] = await Promise.all([
       getChatAgentSettings(CONVERSATION_ID),
       getCompanionProactivePolicy(CONVERSATION_ID),
       getAgentIntents(CONVERSATION_ID),
+      getCompanionPresence(CONVERSATION_ID),
+      getCompanionSharedEpisodes(CONVERSATION_ID),
     ]);
     setSettings({ agentName: nextSettings.agentName || FALLBACK_SETTINGS.agentName });
     setPolicy(nextPolicy);
     setIntents(nextIntents);
+    setPresence(nextPresence);
+    setEpisodes(nextEpisodes);
   }, []);
 
   useFocusEffect(useCallback(() => {
@@ -123,6 +133,10 @@ export default function HomeScreen() {
   const now = new Date();
   const dateLabel = new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short' }).format(now);
   const greeting = greetingForHour(now.getHours());
+  const latestEpisode = useMemo(
+    () => episodes.find((episode) => episode.status === 'CONFIRMED' && !episode.archivedAt) ?? null,
+    [episodes],
+  );
 
   const openChat = useCallback(() => {
     router.push({ pathname: '/companion/[chatId]', params: { chatId: CONVERSATION_ID } });
@@ -163,17 +177,23 @@ export default function HomeScreen() {
               </View>
               <View style={styles.heroStatus}>
                 <View style={styles.heroStatusDot} />
-                <ThemedText type="smallBold" style={styles.heroStatusText}>随时在</ThemedText>
+                <ThemedText type="smallBold" style={styles.heroStatusText}>{presence?.activityLabel ?? '虚拟陪伴中'}</ThemedText>
               </View>
             </View>
             <View style={styles.heroCopy}>
               <ThemedText type="default" style={styles.heroName}>{settings.agentName}</ThemedText>
-              <ThemedText style={styles.heroMessage}>留一点时间，和自己好好说句话。</ThemedText>
+              <ThemedText style={styles.heroMessage}>{presence?.nextPlan ?? '留一点时间，和自己好好说句话。'}</ThemedText>
             </View>
             <View style={styles.heroAction}>
               <ThemedText type="smallBold" style={styles.heroActionText}>继续对话</ThemedText>
               <SymbolView name={{ ios: 'arrow.right', android: 'arrow_forward', web: 'arrow_forward' }} size={16} tintColor="#FFFFFF" />
             </View>
+          </Pressable>
+
+          <Pressable accessibilityRole="button" accessibilityLabel="查看角色此刻状态与共同经历" onPress={() => router.push({ pathname: '/companion/presence', params: { conversationId: CONVERSATION_ID, title: settings.agentName } })} style={({ pressed }) => [styles.presenceCard, { backgroundColor: theme.backgroundElement, borderColor: theme.backgroundSelected }, pressed ? styles.pressed : null]}>
+            <View style={[styles.presenceIcon, { backgroundColor: theme.primarySurface }]}><SymbolView name={{ ios: 'sparkles', android: 'auto_awesome', web: 'auto_awesome' }} size={18} tintColor={theme.primary} /></View>
+            <View style={styles.reminderCopy}><ThemedText type="smallBold">此刻：{presence?.activityLabel ?? '等待状态同步'}</ThemedText><ThemedText type="small" themeColor="textSecondary" numberOfLines={2}>{latestEpisode ? `最近共同片段：${latestEpisode.title}` : '还没有共同片段。'}</ThemedText><ThemedText type="small" themeColor="textSecondary" numberOfLines={1}>系统记录的虚拟角色状态</ThemedText></View>
+            <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.textSecondary} />
           </Pressable>
 
           <View style={styles.quickActions}>
@@ -250,6 +270,8 @@ const styles = StyleSheet.create({
   heroMessage: { color: 'rgba(255,255,255,0.86)', fontSize: 17, lineHeight: 25, fontWeight: 500 },
   heroAction: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: Spacing.two },
   heroActionText: { color: '#FFFFFF' },
+  presenceCard: { alignItems: 'center', borderRadius: 18, borderWidth: StyleSheet.hairlineWidth, flexDirection: 'row', gap: Spacing.three, minHeight: 92, padding: Spacing.three },
+  presenceIcon: { alignItems: 'center', borderRadius: 13, height: 40, justifyContent: 'center', width: 40 },
   quickActions: { flexDirection: 'row', justifyContent: 'space-between', gap: Spacing.two },
   quickAction: { flex: 1, alignItems: 'center', gap: Spacing.two },
   quickIcon: { width: 52, height: 52, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
