@@ -43,6 +43,7 @@ export default function RootLayout() {
           <Stack.Screen name="companion/[chatId]" />
           <Stack.Screen name="companion/memory" />
           <Stack.Screen name="companion/presence" />
+          <Stack.Screen name="companion/gallery" />
           <Stack.Screen name="companion/tasks" />
           <Stack.Screen name="companion/skills" />
           <Stack.Screen name="legal/[document]" />

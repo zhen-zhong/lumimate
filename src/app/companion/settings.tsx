@@ -397,6 +397,21 @@ export default function AgentSettingsScreen() {
                 <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
                 <Pressable
                   accessibilityRole="button"
+                  accessibilityLabel="打开角色相册"
+                  onPress={() => router.push({ pathname: '/companion/gallery' as never, params: { conversationId, title } })}
+                  style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
+                  <View style={[styles.fieldIcon, { backgroundColor: theme.primarySurface }]}>
+                    <SymbolView name={{ ios: 'photo.on.rectangle.angled', android: 'photo_library', web: 'photo_library' }} size={17} tintColor={theme.primary} />
+                  </View>
+                  <View style={styles.fieldTitleCopy}>
+                    <ThemedText type="default">角色相册</ThemedText>
+                    <ThemedText type="small" themeColor="textSecondary">只展示虚拟角色创作，不含用户照片</ThemedText>
+                  </View>
+                  <SymbolView name={{ ios: 'chevron.right', android: 'chevron_right', web: 'chevron_right' }} size={17} tintColor={theme.textSecondary} />
+                </Pressable>
+                <View style={[styles.divider, { backgroundColor: theme.backgroundSelected }]} />
+                <Pressable
+                  accessibilityRole="button"
                   accessibilityLabel="打开技能中心"
                   onPress={() => router.push({ pathname: '/companion/skills' as never, params: { conversationId, title } })}
                   style={({ pressed }) => [styles.companionRow, pressed ? styles.pressed : null]}>
